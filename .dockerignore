@@ -1,0 +1,9 @@
+.git
+.env
+web/node_modules
+web/dist
+web/test-results
+data
+state
+posters
+

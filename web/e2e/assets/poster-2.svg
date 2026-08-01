@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#e6efea"/>
+  <path d="M0 278 160 140l96 82 94-112 146 128 144-96v218H0Z" fill="#3f6b57" opacity=".18"/>
+  <rect x="46" y="42" width="548" height="276" rx="8" fill="#ffffff" stroke="#d8e1dc"/>
+  <text x="84" y="135" fill="#3f6b57" font-family="Microsoft YaHei, sans-serif" font-size="20" font-weight="700">小鹿放映室</text>
+  <text x="84" y="195" fill="#252422" font-family="Microsoft YaHei, sans-serif" font-size="38" font-weight="700">灰姑娘与水晶鞋</text>
+  <circle cx="515" cy="180" r="48" fill="#f1cf79" stroke="#252422" stroke-width="10"/>
+  <path d="m502 154 37 26-37 26Z" fill="#252422"/>
+</svg>
+

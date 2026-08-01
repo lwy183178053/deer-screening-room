@@ -1,0 +1,22 @@
+{$DEER_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		-Server
+	}
+	handle /api/v1/internal/* {
+		respond 404
+	}
+	handle /api/* {
+		reverse_proxy wireguard:8080 {
+			flush_interval -1
+		}
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

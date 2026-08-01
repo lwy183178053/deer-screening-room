@@ -1,0 +1,75 @@
+name: ${DEER_COMPOSE_PROJECT_NAME:-deer-screening-room-media}
+
+services:
+  wireguard-config:
+    image: alpine:3.22
+    restart: "no"
+    environment:
+      DEER_NODE_WIREGUARD_ADDRESS: ${DEER_NODE_WIREGUARD_ADDRESS}
+      DEER_WIREGUARD_PRIVATE_KEY: ${DEER_WIREGUARD_PRIVATE_KEY}
+      DEER_CLOUD_WIREGUARD_PUBLIC_KEY: ${DEER_CLOUD_WIREGUARD_PUBLIC_KEY}
+      DEER_CLOUD_ENDPOINT: ${DEER_CLOUD_ENDPOINT}
+      DEER_GATEWAY_WIREGUARD_ADDRESS: ${DEER_GATEWAY_WIREGUARD_ADDRESS:-10.77.0.1}
+    volumes:
+      - ./wireguard:/output
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        install -d -m 700 /output/wg_confs
+        umask 077
+        printf '[Interface]\nAddress = %s\nPrivateKey = %s\n\n[Peer]\nPublicKey = %s\nEndpoint = %s\nAllowedIPs = %s/32\nPersistentKeepalive = 25\n' \
+          "$${DEER_NODE_WIREGUARD_ADDRESS}" "$${DEER_WIREGUARD_PRIVATE_KEY}" "$${DEER_CLOUD_WIREGUARD_PUBLIC_KEY}" "$${DEER_CLOUD_ENDPOINT}" "$${DEER_GATEWAY_WIREGUARD_ADDRESS}" \
+          > /output/wg_confs/wg0.conf
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 64m
+
+  wireguard:
+    image: lscr.io/linuxserver/wireguard@sha256:ac43e1226878d2611315172d6ea357a95cb326ee73124b91108118efc8666889
+    restart: unless-stopped
+    cap_add: [NET_ADMIN, SYS_MODULE]
+    environment:
+      PUID: 0
+      PGID: 0
+      TZ: Asia/Shanghai
+    volumes:
+      - ./wireguard:/config
+      - /lib/modules:/lib/modules:ro
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: 1
+    depends_on:
+      wireguard-config:
+        condition: service_completed_successfully
+
+  media-node:
+    build:
+      context: ../..
+    image: deerroom-app:${DEER_VERSION:-latest}
+    command: ["/app/media-node"]
+    restart: unless-stopped
+    network_mode: service:wireguard
+    environment:
+      DEER_ROLE: media-node
+      DEER_HTTP_ADDR: :8081
+      DEER_GATEWAY_URL: ${DEER_GATEWAY_URL}
+      DEER_NODE_NAME: ${DEER_NODE_NAME:-fnos-media}
+      DEER_NODE_PUBLIC_URL: ${DEER_NODE_PUBLIC_URL}
+      DEER_NODE_API_TOKEN: ${DEER_NODE_API_TOKEN}
+      DEER_RELAY_TOKEN: ${DEER_RELAY_TOKEN}
+      DEER_MEDIA_ROOT: /media
+      DEER_POSTER_ROOT: /app/posters
+      DEER_SCAN_INTERVAL: ${DEER_SCAN_INTERVAL:-10m}
+      DEER_NODE_MAX_STREAMS: ${DEER_NODE_MAX_STREAMS:-64}
+    volumes:
+      - ${DEER_MEDIA_HOST_PATH}:/media:ro
+      - ./posters:/app/posters
+    depends_on:
+      wireguard:
+        condition: service_started
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 1g

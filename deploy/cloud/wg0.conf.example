@@ -1,0 +1,12 @@
+[Interface]
+Address = 10.77.0.1/24
+ListenPort = 51820
+PrivateKey = REPLACE_WITH_CLOUD_PRIVATE_KEY
+
+[Peer]
+PublicKey = REPLACE_WITH_NODE_1_PUBLIC_KEY
+AllowedIPs = 10.77.0.2/32
+
+[Peer]
+PublicKey = REPLACE_WITH_NODE_2_PUBLIC_KEY
+AllowedIPs = 10.77.0.3/32

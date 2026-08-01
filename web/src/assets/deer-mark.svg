@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 96" role="img" aria-labelledby="deer-title">
+  <title id="deer-title">小鹿叼着一枚带播放标志的鹿币</title>
+  <path d="M37 31C30 25 24 17 26 8c8 3 14 9 16 17 5-3 11-5 17-5 3-9 10-15 20-17 2 9-2 17-8 23 10 6 16 16 14 29-2 17-16 29-35 29-21 0-37-14-37-32 0-10 5-17 14-22 3-1 7-1 10 1Z" fill="#e7655b"/>
+  <path d="M43 24c-3-11-1-19 5-24m9 21c0-11 5-18 13-21M38 22c-8-5-13-10-14-17m39 16c7-5 12-11 13-18" fill="none" stroke="#252422" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M75 54c11-2 19 2 24 9-6 4-14 6-25 4" fill="#e7655b" stroke="#252422" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="101" cy="67" r="15" fill="#f1cf79" stroke="#252422" stroke-width="4"/>
+  <path d="m97 59 11 8-11 8Z" fill="#252422"/>
+  <circle cx="68" cy="43" r="3.5" fill="#252422"/>
+  <path d="M43 58c5 5 12 7 20 5" fill="none" stroke="#8f3b36" stroke-width="3" stroke-linecap="round"/>
+  <path d="M27 70c-7 5-10 12-8 21h51c1-8-2-15-8-20" fill="#3f6b57"/>
+</svg>
+
