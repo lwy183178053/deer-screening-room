@@ -34,6 +34,35 @@ services:
       net.ipv4.conf.all.src_valid_mark: 1
     networks: [backend, edge]
 
+  coturn:
+    image: coturn/coturn:4.6.3@sha256:71c3c990283385567f11794ee692e3a47b66fd9b0bb39e42afbe776e331dd888
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      DEER_TURN_SECRET: ${DEER_TURN_SECRET}
+      DEER_TURN_EXTERNAL_IP: ${DEER_TURN_EXTERNAL_IP}
+      DEER_TURN_RELAY_MIN_PORT: ${DEER_TURN_RELAY_MIN_PORT:-49160}
+      DEER_TURN_RELAY_MAX_PORT: ${DEER_TURN_RELAY_MAX_PORT:-65535}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >-
+        exec turnserver --no-cli --no-tls --no-dtls --fingerprint --use-auth-secret
+        --static-auth-secret="$${DEER_TURN_SECRET}" --realm=${DEER_DOMAIN}
+        --external-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-port=3478
+        --min-port="$${DEER_TURN_RELAY_MIN_PORT}" --max-port="$${DEER_TURN_RELAY_MAX_PORT}"
+        --no-multicast-peers --no-loopback-peers
+        --denied-peer-ip=10.0.0.0-10.255.255.255
+        --denied-peer-ip=127.0.0.0-127.255.255.255
+        --denied-peer-ip=169.254.0.0-169.254.255.255
+        --denied-peer-ip=172.16.0.0-172.31.255.255
+        --denied-peer-ip=192.168.0.0-192.168.255.255
+        --log-file=stdout
+    read_only: true
+    tmpfs: [/tmp, /var/run]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 256m
+
   gateway:
     build:
       context: ../..
@@ -49,14 +78,17 @@ services:
       DEER_BOOTSTRAP_ADMIN: ${DEER_BOOTSTRAP_ADMIN}
       DEER_BOOTSTRAP_PASSWORD: ${DEER_BOOTSTRAP_PASSWORD}
       DEER_NODE_CREDENTIALS: ${DEER_NODE_CREDENTIALS}
-      DEER_USER_STREAM_BPS: ${DEER_USER_STREAM_BPS:-10000000}
       DEER_PASSWORD_HASH_CONCURRENCY: ${DEER_PASSWORD_HASH_CONCURRENCY:-4}
-      DEER_USER_MAX_STREAMS: ${DEER_USER_MAX_STREAMS:-4}
       DEER_USER_STREAM_REQUESTS_PER_MINUTE: ${DEER_USER_STREAM_REQUESTS_PER_MINUTE:-120}
+      DEER_TURN_URLS: ${DEER_TURN_URLS}
+      DEER_TURN_SECRET: ${DEER_TURN_SECRET}
+      DEER_TURN_TTL: ${DEER_TURN_TTL:-2h}
     depends_on:
       postgres:
         condition: service_healthy
       wireguard:
+        condition: service_started
+      coturn:
         condition: service_started
     read_only: true
     tmpfs: [/tmp]

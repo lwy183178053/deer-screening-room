@@ -1,11 +1,21 @@
 # Architecture
 
-小鹿放映室由 Vue 静态站点、Go Gateway、PostgreSQL 和一个或多个 Docker 媒体节点组成。生产环境的云端与每台 Windows、飞牛或 Linux NAS 节点各运行一个 WireGuard 容器，Gateway 与媒体节点分别共享对应 WireGuard 容器的网络命名空间。
+小鹿放映室由 Vue 静态站点、Go Gateway、PostgreSQL、云端 coturn 和一个或多个媒体节点组成。生产环境的 Gateway 与媒体节点使用 WireGuard 作为目录同步、心跳、封面和 WebRTC 信令控制通道。
 
-浏览器只访问 HTTPS 域名。独占服务器可由 Web 容器直接终止 TLS；已有宿主机 Caddy 的服务器使用 `compose.host-caddy.yaml`，宿主机按域名转发到仅绑定回环地址的 Web 容器。Web 容器拒绝所有公网 `/api/v1/internal/*` 请求，并把普通 API 和视频流转发给 Gateway。媒体节点通过 `10.77.0.1:8080` 同步清单与心跳；Gateway 通过 `10.77.0.2:8081` 读取封面和视频字节。
+浏览器只通过 HTTPS 域名访问 Web 与 Gateway。已有宿主机 Caddy 的服务器使用 `compose.host-caddy.yaml`，Web 容器只绑定 `127.0.0.1:28200`；内部 Caddy 拒绝所有公网 `/api/v1/internal/*` 请求。coturn 独立监听 `3478/tcp`、`3478/udp` 和 `49160-65535/udp`，不占用 `80/443`。
 
-媒体节点保存真实路径及媒体键映射，Gateway 只保存不可逆媒体键、工作室、标题和技术元数据。一级目录对应工作室，根目录视频归入“未分类”；一个工作室固定归属一个节点，平台不提供人工编目接口。视频消失时标记不可用，不删除永久权益；节点离线超过 90 秒后，其内容从公开目录隐藏。
+播放数据流如下：
 
-浏览器播放前创建一个六小时播放会话。创建新会话会在用户行锁保护下撤销同账号其他播放会话；Gateway 每次流请求都重新检查 Cookie、会话、权益和节点状态。Gateway 按账号使用管理员设置的速率汇总限速并限制明显的并发/Range 洪泛，媒体节点只执行连接上限，不再设置总出口带宽限速。
+1. 浏览器向 Gateway 创建播放会话并取得临时 TURN REST 凭据。
+2. 浏览器生成 SDP offer，Gateway 根据已授权会话查找媒体节点。
+3. Gateway 通过 WireGuard 将 offer、服务端 ICE 配置和当前直连策略转发给节点。
+4. 节点用 FFmpeg 读取只读媒体文件。浏览器 offer 已声明支持的 H.264 profile 直接复用为 RTP；未协商的 High 等 profile 在会话内用低延迟 Baseline 转码，AAC 转 Opus；Pion 返回 SDP answer。
+5. 媒体字节在浏览器与节点间直连，或经 coturn 中继；Gateway 不接收媒体字节。
 
-节点使用唯一名称、WireGuard 地址和独立 API/Relay Token，Gateway 配置固定名称、凭据和内部地址映射。节点之间没有视频副本或自动故障切换；节点离线不会丢失数据库权益，但相关内容不可播放。
+管理员设置 `p2p_enabled=false` 为默认隐私模式，浏览器和节点两端均强制 `ICETransportPolicyRelay`，观看者只看到 TURN relay candidate。设置为 `true` 时允许 host/server-reflexive candidate；Pion 使用 mDNS 隐藏局域网 host 地址，但直连仍可能向 WebRTC 对端公开公网候选，这是低延迟与节点位置隐私之间的明确取舍。
+
+媒体节点保存真实路径及媒体键映射，Gateway 只保存媒体键、工作室、标题和技术元数据。一级目录对应工作室；视频消失时标记不可用，不删除永久权益。节点离线超过 90 秒后，其内容从公开目录隐藏。
+
+播放会话有效期六小时。创建新会话会在用户行锁保护下撤销同账号旧会话；创建与信令接口继续按账号执行每分钟请求频率保护。节点 PeerConnection 断开、会话关闭、FFmpeg 结束或 TTL 到期时都会清理 FFmpeg 与 RTP 资源，不设置应用级带宽或连接数量上限。
+
+每个节点只使用一份独立 API Token，Gateway 同时绑定节点名称、Token 和 WireGuard `base_url`。节点之间没有媒体副本或自动故障切换；节点离线不会丢失数据库权益。

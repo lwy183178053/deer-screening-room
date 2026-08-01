@@ -1,28 +1,28 @@
 package httpapi
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"strings"
 	"time"
 
-	"deerroom/internal/bandwidth"
 	"deerroom/internal/media"
 	"deerroom/internal/store"
+	"github.com/pion/webrtc/v4"
 )
-
-var forwardedRequestHeaders = []string{"Range", "If-Range", "If-None-Match", "If-Modified-Since"}
-var forwardedResponseHeaders = []string{"Accept-Ranges", "Content-Length", "Content-Range", "Content-Type", "ETag", "Last-Modified"}
 
 func (a *API) registerMediaRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/internal/media/sync", a.syncMedia)
 	mux.HandleFunc("POST /api/v1/internal/media/heartbeat", a.mediaHeartbeat)
-	mux.HandleFunc("POST /api/v1/videos/{id}/playback", a.createPlayback)
-	mux.HandleFunc("GET /api/v1/playback/{id}/stream", a.streamPlayback)
-	mux.HandleFunc("HEAD /api/v1/playback/{id}/stream", a.streamPlayback)
+	mux.HandleFunc("POST /api/v1/videos/{id}/p2p/session", a.createP2PSession)
+	mux.HandleFunc("POST /api/v1/p2p/{id}/offer", a.offerP2P)
+	mux.HandleFunc("DELETE /api/v1/p2p/{id}", a.closeP2P)
 }
 
 func (a *API) syncMedia(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +47,8 @@ func (a *API) syncMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := make([]store.MediaItem, len(input.Items))
-	for index, item := range input.Items {
-		items[index] = store.MediaItem{MediaKey: item.MediaKey, Studio: item.Studio, Title: item.Title, PosterKey: item.PosterKey, DurationMS: item.DurationMS, SizeBytes: item.SizeBytes, BitRate: item.BitRate, Width: item.Width, Height: item.Height, VideoCodec: item.VideoCodec, AudioCodec: item.AudioCodec, Compatibility: item.Compatibility}
+	for i, item := range input.Items {
+		items[i] = store.MediaItem{MediaKey: item.MediaKey, Studio: item.Studio, Title: item.Title, PosterKey: item.PosterKey, DurationMS: item.DurationMS, SizeBytes: item.SizeBytes, BitRate: item.BitRate, Width: item.Width, Height: item.Height, VideoCodec: item.VideoCodec, AudioCodec: item.AudioCodec, Compatibility: item.Compatibility}
 	}
 	nodeID, err := a.store.SyncMedia(r.Context(), input.NodeName, input.BaseURL, input.TotalBytes, input.AvailableBytes, items, a.now())
 	if err != nil {
@@ -58,6 +58,7 @@ func (a *API) syncMedia(w http.ResponseWriter, r *http.Request) {
 	a.nodeStates.update(input.NodeName, input.ScanStatus, input.LastScanAt, input.ScanError, input.InventoryRevision)
 	writeJSON(w, 200, map[string]any{"node_id": nodeID, "videos": len(items)})
 }
+
 func (a *API) mediaHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		NodeName          string    `json:"node_name"`
@@ -86,80 +87,124 @@ func (a *API) mediaHeartbeat(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func (a *API) createPlayback(w http.ResponseWriter, r *http.Request) {
+func (a *API) createP2PSession(w http.ResponseWriter, r *http.Request) {
 	account, ok := a.mutation(w, r)
 	if !ok {
+		return
+	}
+	if allowed, retry := a.streamGuard.allow(account.ID); !allowed {
+		writeRateLimited(w, retry)
 		return
 	}
 	videoID, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	id, _ := randomToken(24)
-	if err := a.store.CreatePlayback(r.Context(), id, account.ID, videoID, a.now().Add(6*time.Hour), a.now()); err != nil {
+	id, err := randomToken(24)
+	if err != nil {
 		storeError(w, err)
 		return
 	}
-	writeJSON(w, 201, map[string]string{"id": id, "stream_url": "/api/v1/playback/" + id + "/stream"})
+	expires := a.now().Add(6 * time.Hour)
+	revoked, err := a.store.CreatePlayback(r.Context(), id, account.ID, videoID, expires, a.now())
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	for _, target := range revoked {
+		a.notifyNodeClose(r, target.NodeName, target.NodeURL, target.SessionID)
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"session_id": id, "expires_at": expires, "p2p_enabled": a.p2pEnabled.Load(), "ice_servers": a.turnServers()})
 }
 
-func (a *API) streamPlayback(w http.ResponseWriter, r *http.Request) {
-	account, _, _, ok := a.authenticate(w, r)
+func (a *API) offerP2P(w http.ResponseWriter, r *http.Request) {
+	account, ok := a.mutation(w, r)
 	if !ok {
 		return
 	}
-	release, allowed, retry := a.streamGuard.begin(account.ID, r.Method == http.MethodGet)
-	if !allowed {
-		writeRateLimited(w, retry)
-		return
-	}
-	defer release()
 	video, err := a.store.PlaybackVideo(r.Context(), r.PathValue("id"), account.ID, a.now())
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	request, err := http.NewRequestWithContext(r.Context(), r.Method, video.NodeURL+"/internal/media/"+video.MediaKey, nil)
+	var input struct {
+		SDP  string `json:"sdp"`
+		Type string `json:"type"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil || input.SDP == "" {
+		writeError(w, 422, "invalid_offer", "WebRTC offer 无效")
+		return
+	}
+	body, err := a.nodeOfferPayload(r.PathValue("id"), video.MediaKey, input.SDP, input.Type)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	relayToken, ok := a.relayTokenFor(video.NodeName)
-	if !ok {
-		writeError(w, http.StatusBadGateway, "node_configuration_invalid", "媒体节点配置无效")
-		return
-	}
-	request.Header.Set("X-Relay-Token", relayToken)
-	for _, name := range forwardedRequestHeaders {
-		if value := r.Header.Get(name); value != "" {
-			request.Header.Set(name, value)
-		}
-	}
-	response, err := a.httpClient.Do(request)
+	response, err := a.nodeRequest(r, video.NodeName, video.NodeURL, http.MethodPost, "/internal/webrtc/offer", body)
 	if err != nil {
-		writeError(w, 502, "node_unavailable", "媒体节点不可用")
+		writeError(w, 502, "node_unavailable", "媒体节点无法建立 P2P 播放")
 		return
 	}
 	defer response.Body.Close()
-	if response.StatusCode != 200 && response.StatusCode != 206 && response.StatusCode != 304 && response.StatusCode != 416 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-		writeError(w, 502, "stream_failed", "媒体节点拒绝播放")
+	copyStatusJSON(w, response)
+}
+
+func (a *API) closeP2P(w http.ResponseWriter, r *http.Request) {
+	account, ok := a.mutation(w, r)
+	if !ok {
 		return
 	}
-	for _, name := range forwardedResponseHeaders {
-		if value := response.Header.Get(name); value != "" {
-			w.Header().Set(name, value)
-		}
+	video, err := a.store.PlaybackVideo(r.Context(), r.PathValue("id"), account.ID, a.now())
+	if err == nil {
+		a.notifyNodeClose(r, video.NodeName, video.NodeURL, r.PathValue("id"))
 	}
-	if disposition := mime.FormatMediaType("inline", map[string]string{"filename": video.Title + ".mp4"}); disposition != "" {
-		w.Header().Set("Content-Disposition", disposition)
+	if err := a.store.RevokePlayback(r.Context(), r.PathValue("id"), account.ID, a.now()); err != nil && err != store.ErrNotFound {
+		storeError(w, err)
+		return
 	}
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.WriteHeader(response.StatusCode)
-	if r.Method == http.MethodGet && (response.StatusCode == 200 || response.StatusCode == 206) {
-		bytesPerSecond := max(a.userStreamBPS.Load()/8, 1)
-		_, _ = bandwidth.Copy(r.Context(), a.bandwidth.Limiter(account.ID, bytesPerSecond), w, response.Body)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) notifyNodeClose(r *http.Request, nodeName, nodeURL, sessionID string) {
+	body, _ := json.Marshal(map[string]string{"session_id": sessionID})
+	if response, err := a.nodeRequest(r, nodeName, nodeURL, http.MethodPost, "/internal/webrtc/close", body); err == nil {
+		response.Body.Close()
 	}
+}
+
+func (a *API) nodeRequest(r *http.Request, nodeName, baseURL, method, path string, body []byte) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(r.Context(), method, strings.TrimRight(baseURL, "/")+path, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+a.nodeTokenFor(nodeName))
+	return a.httpClient.Do(request)
+}
+
+func (a *API) nodeTokenFor(nodeName string) string {
+	if credential, ok := a.nodeCredentials[nodeName]; ok {
+		return credential.APIToken
+	}
+	return a.nodeAPIToken
+}
+
+func (a *API) nodeOfferPayload(sessionID, mediaKey, sdp, sdpType string) ([]byte, error) {
+	return json.Marshal(media.WebRTCOffer{
+		SessionID: sessionID, MediaKey: mediaKey, SDP: sdp, Type: sdpType,
+		ICEServers: a.turnServers(), AllowDirect: a.p2pEnabled.Load(),
+	})
+}
+
+func (a *API) turnServers() []webrtc.ICEServer {
+	if len(a.turnURLs) == 0 || a.turnSecret == "" {
+		return nil
+	}
+	expires := a.now().Add(a.turnTTL).Unix()
+	username := fmt.Sprintf("%d:%s", expires, "deerroom")
+	h := hmac.New(sha1.New, []byte(a.turnSecret))
+	_, _ = h.Write([]byte(username))
+	return []webrtc.ICEServer{{URLs: a.turnURLs, Username: username, Credential: base64.StdEncoding.EncodeToString(h.Sum(nil))}}
 }
 
 func (a *API) nodeAuthorized(r *http.Request, nodeName, baseURL string) bool {
@@ -169,15 +214,6 @@ func (a *API) nodeAuthorized(r *http.Request, nodeName, baseURL string) bool {
 	}
 	return constantToken(received, a.nodeAPIToken)
 }
-
-func (a *API) relayTokenFor(nodeName string) (string, bool) {
-	if len(a.nodeCredentials) > 0 {
-		credential, ok := a.nodeCredentials[nodeName]
-		return credential.RelayToken, ok && credential.RelayToken != ""
-	}
-	return a.relayToken, a.relayToken != ""
-}
-
 func constantToken(received, expected string) bool {
 	return received != "" && len(received) == len(expected) && subtle.ConstantTimeCompare([]byte(received), []byte(expected)) == 1
 }
@@ -185,4 +221,9 @@ func decodeLargeJSON(w http.ResponseWriter, r *http.Request, output any) error {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<20))
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(output)
+}
+func copyStatusJSON(w http.ResponseWriter, response *http.Response) {
+	w.Header().Set("Content-Type", response.Header.Get("Content-Type"))
+	w.WriteHeader(response.StatusCode)
+	_, _ = io.Copy(w, response.Body)
 }

@@ -4,7 +4,7 @@ import App from './App.vue'
 
 const responses: Record<string, unknown> = {
   '/api/v1/studios': { studios: [{ id: 1, name: '半岛2024', video_count: 2 }] },
-  '/api/v1/videos': { videos: [{ id: 1, studio_id: 1, studio_name: '半岛2024', title: '灰姑娘与水晶鞋', duration_ms: 1554560, size_bytes: 467899649, bit_rate: 2407882, width: 1920, height: 1080, video_codec: 'h264', audio_codec: 'aac', compatibility: 'ready', published: true, available: true, unlocked: false, can_play: false, updated_at: '2026-07-31T00:00:00Z' }], page: 1, page_size: 50, total: 1 },
+  '/api/v1/videos': { videos: [{ id: 1, studio_id: 1, studio_name: '半岛2024', title: '灰姑娘与水晶鞋', duration_ms: 1554560, size_bytes: 467899649, bit_rate: 2407882, width: 1920, height: 1080, video_codec: 'h264', audio_codec: 'aac', compatibility: 'ready', published: true, available: true, unlocked: false, can_play: false, updated_at: '2026-07-31T00:00:00Z' }], page: 1, page_size: 20, total: 1 },
   '/api/v1/commerce': { video_price: 1, redeem_notice: '请在卡网兑换后输入卡密。' },
   '/api/v1/auth/captcha': { captcha_id: 'captcha-id', image: 'data:image/png;base64,iVBORw0KGgo=' },
 }

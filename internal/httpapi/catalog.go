@@ -43,7 +43,7 @@ func (a *API) listVideos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page := requestedPage(r)
-	result, err := a.store.ListVideosPage(r.Context(), userID, strings.TrimSpace(r.URL.Query().Get("q")), studioID, false, a.now(), page, 50, seed)
+	result, err := a.store.ListVideosPage(r.Context(), userID, strings.TrimSpace(r.URL.Query().Get("q")), studioID, false, a.now(), page, 20, seed)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -71,7 +71,7 @@ func (a *API) library(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := a.store.ListVideosPage(r.Context(), account.ID, "", 0, true, a.now(), requestedPage(r), 50, 0)
+	result, err := a.store.ListVideosPage(r.Context(), account.ID, "", 0, true, a.now(), requestedPage(r), 20, 0)
 	if err != nil {
 		storeError(w, err)
 		return
@@ -95,12 +95,7 @@ func (a *API) getPoster(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	relayToken, ok := a.relayTokenFor(video.NodeName)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	request.Header.Set("X-Relay-Token", relayToken)
+	request.Header.Set("Authorization", "Bearer "+a.nodeTokenFor(video.NodeName))
 	response, err := a.httpClient.Do(request)
 	if err != nil {
 		http.NotFound(w, r)
@@ -242,12 +237,7 @@ func (a *API) adminRescan(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	relayToken, ok := a.relayTokenFor(node.Name)
-	if !ok {
-		writeError(w, http.StatusBadGateway, "node_configuration_invalid", "节点配置无效")
-		return
-	}
-	request.Header.Set("X-Relay-Token", relayToken)
+	request.Header.Set("Authorization", "Bearer "+a.nodeTokenFor(node.Name))
 	response, err := a.httpClient.Do(request)
 	if err != nil {
 		writeError(w, 502, "node_unavailable", "无法连接媒体节点")

@@ -127,11 +127,15 @@ func TestWalletTransactionsIntegration(t *testing.T) {
 	if before.Balance-after.Balance != 1 {
 		t.Fatalf("unlock charged %d", before.Balance-after.Balance)
 	}
-	if err := db.CreatePlayback(ctx, "play-1", userA.ID, videoID, now.Add(6*time.Hour), now); err != nil {
+	if _, err := db.CreatePlayback(ctx, "play-1", userA.ID, videoID, now.Add(6*time.Hour), now); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.CreatePlayback(ctx, "play-2", userA.ID, videoID, now.Add(6*time.Hour), now); err != nil {
+	revoked, err := db.CreatePlayback(ctx, "play-2", userA.ID, videoID, now.Add(6*time.Hour), now)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(revoked) != 1 || revoked[0].SessionID != "play-1" || revoked[0].NodeName != "node" || revoked[0].NodeURL != "http://node" {
+		t.Fatalf("revoked=%+v", revoked)
 	}
 	if _, err := db.PlaybackVideo(ctx, "play-1", userA.ID, now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("old playback err=%v", err)
@@ -144,7 +148,8 @@ func TestWalletTransactionsIntegration(t *testing.T) {
 	for _, playbackID := range []string{"play-concurrent-1", "play-concurrent-2"} {
 		go func(id string) {
 			<-start
-			errors <- db.CreatePlayback(ctx, id, userA.ID, videoID, now.Add(6*time.Hour), now)
+			_, err := db.CreatePlayback(ctx, id, userA.ID, videoID, now.Add(6*time.Hour), now)
+			errors <- err
 		}(playbackID)
 	}
 	close(start)

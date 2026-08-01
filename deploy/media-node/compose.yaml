@@ -57,11 +57,9 @@ services:
       DEER_NODE_NAME: ${DEER_NODE_NAME:-fnos-media}
       DEER_NODE_PUBLIC_URL: ${DEER_NODE_PUBLIC_URL}
       DEER_NODE_API_TOKEN: ${DEER_NODE_API_TOKEN}
-      DEER_RELAY_TOKEN: ${DEER_RELAY_TOKEN}
       DEER_MEDIA_ROOT: /media
       DEER_POSTER_ROOT: /app/posters
       DEER_SCAN_INTERVAL: ${DEER_SCAN_INTERVAL:-10m}
-      DEER_NODE_MAX_STREAMS: ${DEER_NODE_MAX_STREAMS:-64}
     volumes:
       - ${DEER_MEDIA_HOST_PATH}:/media:ro
       - ./posters:/app/posters

@@ -124,6 +124,12 @@ type VideoPage struct {
 	Total    int64   `json:"total"`
 }
 
+type PlaybackTarget struct {
+	SessionID string
+	NodeName  string
+	NodeURL   string
+}
+
 type MediaItem struct {
 	MediaKey, Studio, Title, PosterKey, VideoCodec, AudioCodec, Compatibility string
 	DurationMS, SizeBytes, BitRate                                            int64

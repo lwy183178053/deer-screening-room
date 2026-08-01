@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -31,11 +30,6 @@ func main() {
 	if err := database.Migrate(ctx); err != nil {
 		log.Fatal(err)
 	}
-	if stored, err := database.UserStreamBPS(ctx); err == nil {
-		cfg.UserStreamBPS = stored
-	} else if !errors.Is(err, store.ErrNotFound) {
-		log.Fatal(err)
-	}
 	if cfg.BootstrapPassword != "" {
 		hash, err := password.Hash(cfg.BootstrapPassword)
 		if err != nil {
@@ -47,13 +41,19 @@ func main() {
 	}
 	nodeCredentials := make(map[string]httpapi.NodeCredential, len(cfg.NodeCredentials))
 	for name, credential := range cfg.NodeCredentials {
-		nodeCredentials[name] = httpapi.NodeCredential{APIToken: credential.APIToken, RelayToken: credential.RelayToken, BaseURL: credential.BaseURL}
+		nodeCredentials[name] = httpapi.NodeCredential{APIToken: credential.APIToken, BaseURL: credential.BaseURL}
+	}
+	p2pEnabled, err := database.P2PEnabled(ctx)
+	if err != nil {
+		log.Fatal(err)
 	}
 	handler := httpapi.New(httpapi.Options{
 		Store: database, CookieSecure: cfg.CookieSecure, SessionTTL: cfg.SessionTTL,
-		NodeAPIToken: cfg.NodeAPIToken, RelayToken: cfg.RelayToken, UserStreamBPS: cfg.UserStreamBPS,
-		PasswordHashConcurrency: cfg.PasswordHashJobs, UserMaxStreams: cfg.UserMaxStreams, UserStreamRPM: cfg.UserStreamRPM,
+		NodeAPIToken:            cfg.NodeAPIToken,
+		PasswordHashConcurrency: cfg.PasswordHashJobs, UserStreamRPM: cfg.UserStreamRPM,
 		NodeCredentials: nodeCredentials,
+		TurnURLs:        cfg.TurnURLs, TurnSecret: cfg.TurnSecret, TurnTTL: cfg.TurnTTL,
+		P2PEnabled: p2pEnabled,
 	})
 	if err := database.CleanupExpired(ctx, time.Now()); err != nil {
 		log.Printf("initial maintenance: %v", err)

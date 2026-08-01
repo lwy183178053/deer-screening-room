@@ -783,3 +783,71 @@
 - `docs/architecture.md`、`docs/deployment-fnos.md`：记录宿主机 Caddy、回环端口、WireGuard 和回滚方式。
 - `progress.md`：追加生产部署和真实业务验收证据。
 - 回滚方式：104 上使用部署前的 `/etc/caddy/Caddyfile.pre-deer-screening-room-20260802-010217` 恢复并 `systemctl reload caddy`；停止云端使用 `docker compose -p deer-screening-room-cloud -f compose.yaml -f compose.host-caddy.yaml down`（不加 `-v`）；本地节点使用对应 Compose `down`，不删除媒体兼容视图或原始视频。
+
+## 2026-08-02 - Task: 实现 WebRTC 播放、TURN 隐私模式与全站移动适配
+### What was done
+- 将视频数据面从 Gateway HTTP Relay 收敛为浏览器与媒体节点 WebRTC；Gateway 只负责权益、会话、TURN 临时凭据和 SDP 信令，节点在会话结束、替换、断线、FFmpeg 结束或 TTL 到期时清理资源。
+- 新增默认关闭的“允许节点直连”管理员开关；关闭时浏览器和节点双端强制 TURN-only，开启时允许直连并在播放页显示实际链路状态。
+- 删除旧 HTTP 播放端点、带宽令牌桶、节点连接槽位、Relay Token、播放速率设置和 Artplayer；保留账号级播放请求频率保护。
+- 新增 coturn 云端服务与固定 relay 端口范围；H.264 profile 被浏览器支持时直接复用，High 等未协商 profile 仅在会话内低延迟转码，不保存副本。
+- 视频目录固定每页 20 条；完成 320px、390px、430px 双列目录、搜索、播放页、后台表格、账户和弹窗适配。
+
+### Testing
+- 使用临时 PostgreSQL、`TEST_DATABASE_URL`、`TEST_HTTP_DATABASE_URL` 和真实 79 个媒体目录执行 `go test ./...`、`go test -race ./...`、`go vet ./...`：通过；真实 H.264/Opus WebRTC RTP 测试通过。
+- `npm.cmd run test`：3 个测试文件、5 项测试通过；`npm.cmd run build`：通过；`npm.cmd run test:e2e`：10 项通过；`npm.cmd audit --audit-level=high`：0 个漏洞。
+- 本地、云端基础、云端宿主机 Caddy 覆盖和媒体节点四套 `docker compose config --quiet`：通过。
+- `coturn/coturn:4.6.3` 镜像版本与固定 digest 实际拉取验证通过；`git diff --check` 通过，跟踪文件与差异秘密扫描只命中示例占位符。
+
+### Notes
+- `.env.example`：移除旧 Relay/限速/连接变量并增加 TURN 示例。
+- `README.md`：更新 WebRTC、TURN 隐私模式、每页 20 条和本地配置说明。
+- `cmd/gateway/main.go`：加载 P2P 设置与 TURN 配置并移除旧播放限制参数。
+- `cmd/media-node/main.go`：按统一节点 API Token 配置启动媒体节点。
+- `compose.yaml`：删除旧播放变量并增加本地 coturn 服务。
+- `deploy/cloud/.env.example`：增加生产 TURN 地址、共享密钥和 relay 端口示例。
+- `deploy/cloud/compose.yaml`：增加固定 digest 的 host-network coturn 并向 Gateway 注入 TURN 配置。
+- `deploy/media-node/.env.example`：删除 Relay Token 与 64 路连接变量。
+- `deploy/media-node/.env.node-2.example`：同步第二节点的精简运行变量。
+- `deploy/media-node/compose.yaml`：删除旧 Relay 与连接槽位环境变量。
+- `docs/api.md`：记录 P2P 会话、offer、close、管理员开关和已删除接口。
+- `docs/architecture.md`：更新 WebRTC 数据面、TURN 隐私边界、profile 处理和资源清理架构。
+- `docs/deployment-fnos.md`：更新 coturn 端口、部署、验收与回滚命令。
+- `docs/media-library.md`：更新每页 20 条、节点接口和会话内 profile 处理。
+- `docs/operations.md`：增加 coturn、relay 流量、FFmpeg 和升级隔离监控项。
+- `docs/security.md`：记录双端 relay 强制、ICE 配置注入、TURN 内网隔离和位置隐私边界。
+- `docs/testing.md`：更新 Go、WebRTC、移动端、Compose 和生产验收矩阵。
+- `go.mod`：加入 Pion WebRTC 直接依赖并移除旧限速依赖。
+- `go.sum`：同步 Go 依赖校验和。
+- `internal/bandwidth/manager.go`：删除旧 Gateway 字节令牌桶实现。
+- `internal/config/config.go`：增加必填 TURN relay 配置并删除旧连接限制字段。
+- `internal/config/config_test.go`：覆盖缺失 TURN 与 STUN-only 配置拒绝。
+- `internal/httpapi/catalog.go`：目录和已购库分页改为每页 20 条。
+- `internal/httpapi/media.go`：实现 P2P 会话、服务端 ICE 策略、节点信令和旧会话关闭通知。
+- `internal/httpapi/media_integration_test.go`：用真实数据库覆盖会话替换、offer/answer、关闭和旧接口 404。
+- `internal/httpapi/node_credentials_test.go`：同步统一节点 API Token 凭据结构。
+- `internal/httpapi/p2p_settings.go`：新增管理员节点直连设置接口。
+- `internal/httpapi/router.go`：注册 P2P 设置并持有 TURN 与直连运行状态。
+- `internal/httpapi/settings.go`：删除旧播放速率接口。
+- `internal/httpapi/stream_guard.go`：收敛为账号级播放请求频率保护。
+- `internal/httpapi/stream_guard_test.go`：验证只限制请求频率、不限制活跃播放数量。
+- `internal/httpapi/turn_test.go`：覆盖 TURN REST 凭据与 Gateway 强制节点 ICE 策略。
+- `internal/media/node.go`：删除 HTTP 视频读取并统一节点鉴权。
+- `internal/media/scanner_test.go`：验证旧媒体端点 404 与封面 API Token 鉴权。
+- `internal/media/webrtc.go`：新增 Pion、FFmpeg、RTP、profile 选择和会话清理实现。
+- `internal/media/webrtc_test.go`：覆盖 relay-only、生命周期、错误脱敏、profile 选择和真实媒体 RTP。
+- `internal/store/catalog.go`：播放事务返回被替换会话的节点路由。
+- `internal/store/postgres_integration_test.go`：验证旧会话撤销路由与并发唯一会话。
+- `internal/store/settings.go`：保存和读取 `p2p_enabled`。
+- `internal/store/types.go`：增加被撤销播放目标类型。
+- `internal/store/migrations/003_p2p_enabled.sql`：默认关闭 P2P 并删除旧播放速率设置项。
+- `web/e2e/app.spec.ts`：覆盖 WebRTC、后台开关、每页 20 条和三档手机宽度。
+- `web/package.json`：移除 Artplayer 依赖。
+- `web/package-lock.json`：同步前端依赖锁。
+- `web/src/App.test.ts`：同步目录每页 20 条夹具。
+- `web/src/App.vue`：接入 P2P 会话、链路状态和管理员直连开关。
+- `web/src/components/VideoPlayer.vue`：使用原生 WebRTC 视频、candidate pair 状态和倍速控制。
+- `web/src/components/VideoPlayer.test.ts`：验证 relay 策略、offer/answer 和双端关闭。
+- `web/src/styles.css`：完成双列目录、搜索、播放页、后台、弹窗和链路状态响应式布局。
+- `web/src/types.ts`：增加 P2P 会话、ICE 与管理员设置类型。
+- `progress.md`：追加本轮实施、验证和回滚记录。
+- 回滚方式：在部署前使用本轮实现提交的父提交作为代码回滚点，恢复部署前云端与节点 `.env` 备份后分别重建小鹿 Gateway/Web 与媒体节点；停止新增 coturn，不加 `-v`，保留 PostgreSQL、WireGuard、封面缓存、兼容视图和原视频。新旧 Gateway 与节点协议不可混用，必须成套回滚。

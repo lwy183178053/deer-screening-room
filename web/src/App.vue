@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CheckCircle2, Coins, Film, Home, KeyRound, Library, LogIn, LogOut, Minus, Play, Plus, RefreshCw, Search, Server, Shield, Ticket, User as UserIcon, Users } from '@lucide/vue'
 import { api, APIError, csrf, setCSRF } from './api'
 import { formatBytes, formatDate } from './format'
-import type { Account, AdminSettings, Commerce, NodeInfo, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry } from './types'
+import type { Account, AdminSettings, Commerce, NodeInfo, P2PSession, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry } from './types'
 import AppModal from './components/AppModal.vue'
 import BrandLogo from './components/BrandLogo.vue'
 import VideoCard from './components/VideoCard.vue'
@@ -32,7 +32,8 @@ const watchMode = ref(false)
 const watchVideo = ref<Video | null>(null)
 const watchLoading = ref(false)
 const watchError = ref('')
-const streamURL = ref('')
+const playbackSession = ref<P2PSession | null>(null)
+const playbackStatus = ref<'connecting' | 'direct' | 'turn' | 'failed'>('connecting')
 const pendingWatchID = ref<number | null>(null)
 let watchPushed = false
 let scanPollTimer: number | undefined
@@ -76,7 +77,7 @@ const creditDirection = ref<1 | -1>(1)
 const creditAmount = ref(1)
 const creditReason = ref('')
 const creditBusy = ref(false)
-const userStreamMbps = ref(10)
+const p2pEnabled = ref(false)
 const settingsSaving = ref(false)
 
 const sectionTitle = computed(() => {
@@ -89,7 +90,8 @@ const sectionTitle = computed(() => {
 const creditDelta = computed(() => creditDirection.value * (Number(creditAmount.value) || 0))
 const creditBalanceAfter = computed(() => (creditTarget.value?.balance ?? 0) + creditDelta.value)
 const recommendationMode = computed(() => activeView.value === 'home' && !selectedStudio.value && !search.value.trim())
-const catalogPageCount = computed(() => recommendationMode.value ? 1 : Math.max(1, Math.ceil(catalogTotal.value / 50)))
+const catalogPageCount = computed(() => recommendationMode.value ? 1 : Math.max(1, Math.ceil(catalogTotal.value / 20)))
+const playbackStatusText = computed(() => ({ connecting: '正在连接节点', direct: '节点直连', turn: 'TURN 隐私中继', failed: '连接失败' })[playbackStatus.value])
 
 watch([message, error], () => {
   if (noticeTimer !== undefined) window.clearTimeout(noticeTimer)
@@ -240,7 +242,8 @@ async function openWatch(videoID: number, push: boolean) {
   watchMode.value = true
   watchLoading.value = true
   watchError.value = ''
-  streamURL.value = ''
+  playbackSession.value = null
+  playbackStatus.value = 'connecting'
   selectedVideo.value = null
   if (!account.value) {
     pendingWatchID.value = videoID
@@ -254,8 +257,7 @@ async function openWatch(videoID: number, push: boolean) {
     watchVideo.value = detail.video
     if (!detail.video.available) throw new Error('媒体节点暂时不可用')
     if (!detail.video.can_play) throw new Error('尚未获得本片观看权限')
-    const playback = await api<{ stream_url: string }>(`/api/v1/videos/${videoID}/playback`, { method: 'POST', body: '{}' })
-    streamURL.value = playback.stream_url
+    playbackSession.value = await api<P2PSession>(`/api/v1/videos/${videoID}/p2p/session`, { method: 'POST', body: '{}' })
   } catch (caught) {
     watchError.value = errorMessage(caught)
   } finally {
@@ -263,7 +265,7 @@ async function openWatch(videoID: number, push: boolean) {
   }
 }
 function stopWatch() {
-  streamURL.value = ''
+  playbackSession.value = null
   watchVideo.value = null
   watchMode.value = false
   watchLoading.value = false
@@ -295,8 +297,8 @@ async function openAdmin(tab: AdminTab) {
   if (tab === 'users') await loadUsers()
   if (tab === 'nodes') { const body = await api<{ nodes: NodeInfo[] }>('/api/v1/admin/nodes'); nodes.value = body.nodes ?? [] }
   if (tab === 'settings') {
-    const body = await api<AdminSettings>('/api/v1/admin/settings')
-    userStreamMbps.value = body.user_stream_mbps || 10
+    const body = await api<AdminSettings>('/api/v1/admin/p2p-settings')
+    p2pEnabled.value = body.p2p_enabled
   }
 }
 async function loadUsers(reset = true) {
@@ -351,9 +353,9 @@ async function saveRedeemNotice() {
 async function saveSettings() {
   settingsSaving.value = true
   try {
-    const body = await api<AdminSettings>('/api/v1/admin/settings', { method: 'PUT', body: JSON.stringify({ user_stream_mbps: userStreamMbps.value }) })
-    userStreamMbps.value = body.user_stream_mbps
-    message.value = '播放速率已保存。'
+    const body = await api<AdminSettings>('/api/v1/admin/p2p-settings', { method: 'PUT', body: JSON.stringify({ p2p_enabled: p2pEnabled.value }) })
+    p2pEnabled.value = body.p2p_enabled
+    message.value = p2pEnabled.value ? '已允许节点直连。' : '已强制使用 TURN 隐私中继。'
   } catch (caught) { error.value = errorMessage(caught) } finally { settingsSaving.value = false }
 }
 async function toggleUser(user: Account) { await api(`/api/v1/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !user.enabled }) }); await loadUsers() }
@@ -418,7 +420,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
       <main class="watch-main">
         <div v-if="watchLoading" class="watch-status"><RefreshCw class="spin" :size="24" />正在准备播放</div>
         <div v-else-if="watchError" class="watch-status error"><AlertCircle :size="26" /><strong>{{ watchError }}</strong><button class="secondary" type="button" @click="backFromWatch">返回目录</button></div>
-          <template v-else-if="watchVideo && streamURL"><div class="watch-player"><VideoPlayer :src="streamURL" :poster="watchVideo.poster_url" /></div><footer><span>{{ watchVideo.studio_name }}</span><h1>{{ watchVideo.title }}</h1></footer></template>
+          <template v-else-if="watchVideo && playbackSession"><div class="watch-player"><VideoPlayer :session-id="playbackSession.session_id" :ice-servers="playbackSession.ice_servers" :p2p-enabled="playbackSession.p2p_enabled" @status="playbackStatus = $event" @error="watchError = $event" /></div><footer><div class="playback-link-status" :data-status="playbackStatus"><span class="status-dot"></span>{{ playbackStatusText }}</div><span>{{ watchVideo.studio_name }}</span><h1>{{ watchVideo.title }}</h1></footer></template>
       </main>
     </section>
 
@@ -453,7 +455,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
           
           <template v-else-if="adminTab === 'users'"><div class="admin-user-heading"><div><span>成员管理</span><h2>用户账号</h2></div><strong><Users :size="17" />共 {{ userAllTotal }} 个账号</strong></div><form class="admin-user-toolbar" @submit.prevent="submitUserSearch"><Search :size="18" /><input v-model="userSearch" aria-label="搜索用户邮箱" placeholder="搜索用户邮箱" /><button class="secondary" type="submit">搜索</button></form><div class="admin-table"><div class="table-row user-admin head"><span>用户</span><span>鹿币</span><span>操作</span></div><div v-for="user in users" :key="user.id" class="table-row user-admin"><span>{{ user.email }}<small>{{ user.is_admin ? '管理员' : user.enabled ? '正常' : '已停用' }}</small></span><strong>{{ user.balance }}</strong><div class="row-actions"><button class="icon-button" type="button" title="增加鹿币" aria-label="增加鹿币" @click="openCreditAdjustment(user, 1)"><Plus :size="16" /></button><button class="icon-button" type="button" title="扣减鹿币" aria-label="扣减鹿币" @click="openCreditAdjustment(user, -1)"><Minus :size="16" /></button><button class="secondary" :disabled="user.id === account?.id" @click="toggleUser(user)">{{ user.enabled ? '停用' : '启用' }}</button><button class="icon-button" type="button" title="重置密码" aria-label="重置密码" @click="resetUser = user"><KeyRound :size="16" /></button></div></div></div><div v-if="users.length < userTotal" class="load-more-row"><button class="secondary" type="button" :disabled="usersLoadingMore" @click="loadMoreUsers"><RefreshCw v-if="usersLoadingMore" class="spin" :size="17" />{{ usersLoadingMore ? '正在加载' : '加载更多用户' }}</button></div></template>
           <div v-else-if="adminTab === 'nodes'" class="node-list"><article v-for="node in nodes" :key="node.id"><div><Server :size="22" /><span><strong>{{ node.name }}</strong><small>{{ node.online ? '在线' : '离线' }} · {{ scanStatus(node) }} · {{ formatDate(node.last_seen_at) }}</small><small v-if="node.scan_error" class="bad">{{ node.scan_error }}</small></span></div><dl><div><dt>总容量</dt><dd>{{ formatBytes(node.total_bytes) }}</dd></div><div><dt>可用容量</dt><dd>{{ formatBytes(node.available_bytes) }}</dd></div></dl><button class="secondary" :disabled="!node.online || node.scan_status === 'scanning'" @click="rescan(node)"><RefreshCw :size="17" />重新扫描</button></article></div>
-          <section v-else class="admin-settings"><div><span>系统设置</span><h2>播放速率</h2><p>所有账号的播放连接共享此速率，保存后新的视频流会立即使用新值。</p></div><form class="admin-form settings-form" @submit.prevent="saveSettings"><label>单用户播放速率（Mbps）<input v-model.number="userStreamMbps" type="number" min="1" max="1000" step="1" required /></label><small>当前范围为 1 到 1000 Mbps。</small><button class="primary" type="submit" :disabled="settingsSaving">{{ settingsSaving ? '正在保存' : '保存设置' }}</button></form><div class="settings-readonly"><span>节点带宽</span><strong>不设上限</strong><small>节点按实际网络、磁盘和连接上限提供速度。</small></div></section>
+          <section v-else class="admin-settings"><div><span>系统设置</span><h2>播放链路</h2><p>关闭节点直连时，所有视频只通过 TURN 中继，浏览器不会获得节点公网候选地址。开启后优先尝试浏览器与节点直连，以降低中继流量和延迟。</p></div><form class="admin-form settings-form" @submit.prevent="saveSettings"><button class="privacy-toggle" :class="{ active: p2pEnabled }" type="button" role="switch" :aria-checked="p2pEnabled" aria-label="允许节点直连" @click="p2pEnabled = !p2pEnabled"><span class="toggle-track"><span></span></span><span><strong>允许节点直连</strong><small>{{ p2pEnabled ? '已开启，优先建立 P2P 链路' : '已关闭，仅使用 TURN 隐私中继' }}</small></span></button><button class="primary" type="submit" :disabled="settingsSaving">{{ settingsSaving ? '正在保存' : '保存设置' }}</button></form><div class="settings-readonly"><span>流量限制</span><strong>不设上限</strong><small>播放吞吐由节点、浏览器和当前网络链路协商决定。</small></div></section>
         </section>
       </main>
 
