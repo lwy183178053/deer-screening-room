@@ -48,9 +48,10 @@ services:
       - >-
         exec turnserver --no-cli --no-tls --no-dtls --fingerprint --use-auth-secret
         --static-auth-secret="$${DEER_TURN_SECRET}" --realm=${DEER_DOMAIN}
-        --external-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-port=3478
+        --external-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-ip="$${DEER_TURN_EXTERNAL_IP}"
+        --relay-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-port=3478
         --min-port="$${DEER_TURN_RELAY_MIN_PORT}" --max-port="$${DEER_TURN_RELAY_MAX_PORT}"
-        --no-multicast-peers --no-loopback-peers
+        --no-multicast-peers
         --denied-peer-ip=10.0.0.0-10.255.255.255
         --denied-peer-ip=127.0.0.0-127.255.255.255
         --denied-peer-ip=169.254.0.0-169.254.255.255

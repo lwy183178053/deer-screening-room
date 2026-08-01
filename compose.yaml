@@ -27,8 +27,9 @@ services:
       - >-
         exec turnserver --no-cli --no-tls --no-dtls --fingerprint --use-auth-secret
         --static-auth-secret="$${DEER_TURN_SECRET}" --realm=deerroom.local
-        --external-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-port=3478
-        --min-port=49160 --max-port=49200 --no-multicast-peers --no-loopback-peers
+        --external-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-ip="$${DEER_TURN_EXTERNAL_IP}"
+        --relay-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-port=3478
+        --min-port=49160 --max-port=49200 --no-multicast-peers
         --log-file=stdout
     ports:
       - "3478:3478/tcp"

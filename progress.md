@@ -851,3 +851,23 @@
 - `web/src/types.ts`：增加 P2P 会话、ICE 与管理员设置类型。
 - `progress.md`：追加本轮实施、验证和回滚记录。
 - 回滚方式：在部署前使用本轮实现提交的父提交作为代码回滚点，恢复部署前云端与节点 `.env` 备份后分别重建小鹿 Gateway/Web 与媒体节点；停止新增 coturn，不加 `-v`，保留 PostgreSQL、WireGuard、封面缓存、兼容视图和原视频。新旧 Gateway 与节点协议不可混用，必须成套回滚。
+
+## 2026-08-02 - Task: 部署 WebRTC 播放并验收 TURN 隐私模式
+### What was done
+- 将功能提交 `98d4757` 部署到 104 的独立小鹿 Compose 项目，只替换 Gateway、Web 并新增 coturn；PostgreSQL、WireGuard、宿主机 Caddy 和其他业务保持原实例。
+- 生产 TURN 端点使用 104 公网地址和新生成的受限运行密钥，删除旧 Relay、字节限速和连接数量运行变量；coturn 只绑定 104，未占用同主机其他公网地址。
+- 本机只重建 `deer-screening-room-media-1` 的 media-node，继续只读使用原媒体目录；管理员直连开关最终恢复默认关闭。
+
+### Testing
+- 部署前创建代码、Compose、Caddy、生产 `.env` 和 PostgreSQL 逻辑备份；Caddy 配置校验通过且配置哈希、进程 PID 与启动时间前后不变。
+- coturn 固定镜像启动稳定、重启计数为 0，仅监听 `38.34.191.104:3478`；从本机完成 TURN REST UDP 和 TCP 双向分配测试，各发送和接收 6 条消息、丢包为 0。
+- `https://xiaolu.lwylink.xyz` 与 `/api/v1/health` 返回 `200`，旧 HTTP 播放端点返回 `404`；既有三个业务域名继续返回 `200`，既有非小鹿容器 ID 全部不变。
+- 小鹿 PostgreSQL 和 WireGuard 容器 ID 未变；本机 WireGuard 和其他容器 ID 未变，媒体节点能经 `10.77.0.1` 访问 Gateway，生产目录返回 79 个视频且节点在线。
+- 真实 Chromium 以 390px 登录生产域名：目录保持两列、搜索按钮无覆盖、播放页无横向溢出。TURN-only 时浏览器和节点选中 relay/relay candidate，视频实际解码为 2560x1440，视频与音频轨道均存在；开启直连后浏览器策略切换为 `all`，当前网络自动回落 TURN，退出后 FFmpeg 已清理并将开关恢复关闭。
+
+### Notes
+- `compose.yaml`：删除 coturn 4.6.3 不支持的参数，并限制监听与 relay 地址。
+- `deploy/cloud/compose.yaml`：同步生产 coturn 参数和单公网 IP 绑定。
+- `docs/deployment-fnos.md`：补充多公网 IP 主机的 TURN 单地址绑定要求。
+- `progress.md`：追加生产部署、隔离验证、真实播放证据和回滚点。
+- 回滚点：云端备份位于 `/opt/deer-screening-room/backups/webrtc-20260802-033338`，旧代码目录为 `/opt/deer-screening-room/app.pre-webrtc-20260802-033338`；先停止小鹿 coturn，再原子恢复旧代码目录并仅重建旧 Gateway/Web，不重建 PostgreSQL 或 WireGuard。恢复数据库时使用备份内 `postgres.dump`。本机运行配置备份位于被忽略的 `deploy/media-node/wireguard/runtime-backups/`；代码回到 `c984c94` 后只重建 media-node，不操作 WireGuard、其他容器或原视频。

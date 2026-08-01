@@ -28,7 +28,7 @@ mkdir -p wireguard posters
 - `3478/tcp`、`3478/udp`：TURN 客户端连接。
 - `49160-65535/udp`：TURN 媒体 relay 范围。
 
-`DEER_TURN_EXTERNAL_IP` 填服务器公网 IP，`DEER_TURN_URLS` 使用同一公网 IP 同时配置 UDP 与 TCP URL。不要填写经过 Cloudflare 代理的业务域名，标准代理不转发 `3478`。coturn 使用 TURN REST 临时凭据，容器不保存长期用户列表；relay 禁止访问回环、链路本地和 RFC1918 私网地址，避免利用 TURN 探测云端内网。
+`DEER_TURN_EXTERNAL_IP` 填服务器实际持有的公网 IP，coturn 的监听地址和 relay 地址都会只绑定该 IP；多公网 IP 主机不得使用全接口监听。`DEER_TURN_URLS` 使用同一公网 IP 同时配置 UDP 与 TCP URL。不要填写经过 Cloudflare 代理的业务域名，标准代理不转发 `3478`。coturn 使用 TURN REST 临时凭据，容器不保存长期用户列表；relay 禁止访问回环、链路本地和 RFC1918 私网地址，避免利用 TURN 探测云端内网。
 
 管理员默认关闭“允许节点直连”。此时浏览器与节点都只发布 relay candidate，观看者看不到节点公网候选。开启直连后可降低延迟与云端流量，但 WebRTC 对端可能看到节点公网候选。
 
