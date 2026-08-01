@@ -742,3 +742,22 @@
 - `.gitignore`：忽略所有 WireGuard 运行目录。
 - `progress.md`：追加本轮基线固化和验证证据。
 - 回滚方式：首个基线提交完成后可使用 `git revert` 撤销后续提交；如只撤销本轮规范落点，删除 `AGENTS.md`、恢复 `.gitignore` 并删除本条末尾追加记录。
+
+## 2026-08-02 - Task: 增加宿主机 Caddy 隔离部署模式
+### What was done
+- 保留云端 Web 容器独占 `80/443` 的原部署方式，新增宿主机已有 Caddy 时使用的 Compose 覆盖配置。
+- 覆盖模式只把 Web 发布到 `127.0.0.1:28200`，内部 Caddy 继续阻断内部 API、代理普通 API 并提供前端静态文件。
+- 补充宿主机 Caddy 的部署、验证和回滚说明，避免与服务器现有站点和端口冲突。
+
+### Testing
+- 云端基础 Compose 与宿主机 Caddy 覆盖配置合并解析通过；最终仅发布 `127.0.0.1:28200->80/tcp` 和 WireGuard `51820/udp`，未发布容器 `443`。
+- `Caddyfile.internal` 使用 Caddy 2 容器验证，返回 `Valid configuration`。
+- `git diff --check`：通过。
+
+### Notes
+- `deploy/cloud/compose.host-caddy.yaml`：新增回环端口和内部 Caddy 挂载覆盖。
+- `deploy/cloud/Caddyfile.internal`：新增宿主机反向代理后的内部 HTTP 配置。
+- `deploy/cloud/.env.example`：新增 Web 回环端口示例。
+- `docs/architecture.md`、`docs/deployment-fnos.md`：同步双层 Caddy 架构、启动验证和回滚方法。
+- `progress.md`：追加本轮配置实施和验证证据。
+- 回滚方式：使用 `git revert` 回滚本轮提交；服务器侧停止服务时使用基础与覆盖两份 Compose 文件且不加 `-v`，宿主机 Caddy 恢复部署前备份后 reload。

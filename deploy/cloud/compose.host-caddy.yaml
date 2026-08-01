@@ -1,0 +1,6 @@
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:${DEER_WEB_PORT:-28200}:80"
+    volumes: !override
+      - ./Caddyfile.internal:/etc/caddy/Caddyfile:ro

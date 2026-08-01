@@ -43,13 +43,32 @@ Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Wind
 
 ## 3. Start services
 
-先启动云端：
+独占 `80/443` 的服务器先启动云端：
 
 ```bash
 docker compose --env-file .env up -d --build
 docker compose ps
 docker compose logs -f wireguard gateway
 ```
+
+服务器已有宿主机 Caddy 时，使用覆盖配置，Web 只监听宿主机回环端口：
+
+```bash
+docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --build
+curl -fsS http://127.0.0.1:${DEER_WEB_PORT:-28200}/api/v1/health
+```
+
+宿主机 Caddy 为新域名单独增加站点，不改其他站点块：
+
+```caddyfile
+video.example.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy 127.0.0.1:28200
+}
+```
+
+修改前备份现有 Caddyfile，使用 `caddy validate --config` 验证候选文件后再替换并执行 `systemctl reload caddy`。回滚时恢复备份并 reload；停止小鹿服务时必须同时指定两份 Compose 文件且不要使用 `-v`。
 
 确认云端 `wg0` 为 `10.77.0.1/24` 后启动节点：
 
