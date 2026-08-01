@@ -761,3 +761,25 @@
 - `docs/architecture.md`、`docs/deployment-fnos.md`：同步双层 Caddy 架构、启动验证和回滚方法。
 - `progress.md`：追加本轮配置实施和验证证据。
 - 回滚方式：使用 `git revert` 回滚本轮提交；服务器侧停止服务时使用基础与覆盖两份 Compose 文件且不加 `-v`，宿主机 Caddy 恢复部署前备份后 reload。
+
+## 2026-08-02 - Task: 部署生产云端栈并接入 Windows 媒体节点
+### What was done
+- 在 `38.34.191.104:53612` 建立独立 `/opt/deer-screening-room` 部署目录和全新 PostgreSQL 生产卷，使用提交 `2506e14` 构建 Gateway、Web 和 WireGuard；未连接或修改其他服务器。
+- 在现有宿主机 Caddy 中仅追加 `xiaolu.lwylink.xyz` 到回环 `127.0.0.1:28200` 的反向代理，保留修改前备份；104 上原有 ModelRoute、Sub2API、RelayDrive、Redis 和 MySQL 容器保持运行。
+- 在当前 Windows 以独立 Compose 项目启动 WireGuard 和媒体节点，使用只读兼容视图同步 79 个视频，生产目录已可通过公网域名访问和播放。
+
+### Testing
+- 104 云端 PostgreSQL healthy、Gateway `/api/v1/health` 返回 `ok`、Web 仅监听 `127.0.0.1:28200`、WireGuard 监听 `51820/udp`。
+- Caddy 候选配置和最终配置均 `Valid configuration`；`https://xiaolu.lwylink.xyz` 与 HTTP 跳转均返回 `200`。
+- 104 上既有 `api.lwylink.xyz`、`sdk.lwylink.xyz`、`aggregate.lwylink.xyz` 仍返回 `200`；既有容器启动时间、运行状态和健康状态无变化。
+- 本地与云端 WireGuard `wg show` 均有最新握手和传输数据；云端目录接口返回 `total=79`，视频全部 `available=true`。
+- 生产业务冒烟：管理员登录成功，生成并兑换 1 鹿币，余额 `0 -> 1`；永久解锁后余额 `1 -> 0`；播放会话返回 `201`，Range 返回 `206`、`Content-Range: bytes 0-1023/1305375169`、读取 1024 字节。
+- Chrome 真实浏览器打开公网首页返回 `200`，页面标题正确，渲染 50 个视频卡片；唯一控制台 `401` 为未登录首屏 `/auth/me` 的预期响应。
+- 本地媒体 Compose 仅运行 `deer-screening-room-media-1` 的 WireGuard 和 media-node；原有本地业务容器状态保持不变。
+
+### Notes
+- `deploy/cloud/`：提交并部署生产 Compose、宿主机 Caddy 覆盖配置和内部 Web 配置。
+- `deploy/media-node/`：使用被忽略的本地运行环境、WireGuard 私钥和封面缓存接入 Windows 媒体目录。
+- `docs/architecture.md`、`docs/deployment-fnos.md`：记录宿主机 Caddy、回环端口、WireGuard 和回滚方式。
+- `progress.md`：追加生产部署和真实业务验收证据。
+- 回滚方式：104 上使用部署前的 `/etc/caddy/Caddyfile.pre-deer-screening-room-20260802-010217` 恢复并 `systemctl reload caddy`；停止云端使用 `docker compose -p deer-screening-room-cloud -f compose.yaml -f compose.host-caddy.yaml down`（不加 `-v`）；本地节点使用对应 Compose `down`，不删除媒体兼容视图或原始视频。
