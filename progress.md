@@ -930,3 +930,22 @@
 - `/opt/deer-screening-room/app.range-resume-20260802-2`：线上新 Web 发布目录。
 - `progress.md`：追加生产部署证据和回滚点。
 - 回滚方式：在 104 使用旧发布目录 `/opt/deer-screening-room/app.limit-removal-20260802-1` 的 Compose 配置执行 `docker compose -p deer-screening-room-cloud -f deploy/cloud/compose.yaml -f deploy/cloud/compose.host-caddy.yaml up -d --no-build --no-deps web`，仅恢复 Web 容器；Gateway、数据库、WireGuard 和其他业务不动。
+
+## 2026-08-02 - Task: 创建 GitHub 私有仓库并接入 GHCR
+### What was done
+- 在 GitHub 账号 `lwy183178053` 下创建私有仓库 `deer-screening-room`，将本地 `main` 发布到远程并保留当前播放器修复提交。
+- 新增 GitHub Actions 容器发布流程，使用 `v*` 标签构建 `linux/amd64` 媒体节点镜像并推送到 `ghcr.io/lwy183178053/deer-screening-room`。
+- 新增 NAS registry Compose 覆盖配置，绿联 Docker 项目可直接拉取固定镜像标签，继续通过运行时环境注入节点凭据和媒体路径。
+
+### Testing
+- `docker compose --env-file deploy/media-node/.env.example -f deploy/media-node/compose.yaml -f deploy/media-node/compose.registry.yaml config --quiet`：通过。
+- GitHub Actions run `30744597658`：完成且结论为 `success`，标签 `v0.1.0` 已触发镜像发布。
+- GitHub 仓库 API：默认分支为 `main`，仓库保持私有。
+- `git diff --check`：通过。
+
+### Notes
+- `.github/workflows/publish-container.yml`：GHCR 自动构建和发布工作流。
+- `deploy/media-node/compose.registry.yaml`：跳过本地构建并拉取 GHCR 镜像的 Compose 覆盖。
+- `deploy/media-node/.env.example`、`docs/deployment-fnos.md`：补充镜像版本和绿联 NAS 拉取说明。
+- `progress.md`：追加仓库与镜像发布证据。
+- 回滚方式：NAS 将 `DEER_VERSION` 指向历史 GHCR 标签后执行 `docker compose pull` 和 `up -d --no-build`；代码侧使用 Git 历史提交恢复工作流。
