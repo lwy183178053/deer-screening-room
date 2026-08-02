@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-08-03 - Task: 跨平台媒体兼容视图自动生成
+### What was done
+- 媒体节点新增跨平台兼容视图同步：源目录只读挂载到 `/source`，节点在独立 `media-view` 卷的 `/media` 生成稳定短别名，优先使用硬链接，跨文件系统时回退为软链接。
+- 每次首次、定时或手动扫描前自动同步新增、变更和删除的视频；超长文件名通过 `catalog-titles.json` 恢复完整标题，原始视频不复制、不重命名、不删除。
+- 更新 Windows、Linux/NAS 节点 Compose、管理员导出安装包模板和部署文档；用户仍只需设置 `DEER_MEDIA_HOST_PATH`，新版节点包会自动启用视图。
+
+### Testing
+- `go test ./...`：通过。
+- `go test -race ./...`：通过。
+- `go vet ./...`：通过。
+- `npm.cmd run test -- --run`：3 个测试文件、6 项通过。
+- `npm.cmd run build`：通过。
+- `docker compose --env-file deploy/media-node/.env.ugreen.example -f deploy/media-node/compose.ugreen.yaml config --quiet`：通过。
+- `docker compose --env-file deploy/media-node/.env.example -f deploy/media-node/compose.yaml -f deploy/media-node/compose.registry.yaml config --quiet`：通过。
+- `docker build --tag deerroom-app:media-view-20260803 .`：通过。
+- `git diff --check`：通过。
+- 回归测试覆盖长文件名稳定别名、完整标题映射、硬链接视图、新文件加入和源文件删除清理。
+
+### Notes
+- `internal/media/view.go`、`internal/media/view_test.go`：新增跨平台视图同步器及测试。
+- `internal/media/node.go`、`internal/media/scanner_test.go`：扫描前自动同步视图并覆盖节点级回归。
+- `internal/config/config.go`、`cmd/media-node/main.go`：读取并传递 `DEER_MEDIA_SOURCE_ROOT`。
+- `deploy/media-node/compose.yaml`、`deploy/media-node/compose.ugreen.yaml`、`deploy/media-node/.env.example`、`deploy/media-node/.env.ugreen.example`：新增 `/source` 只读源目录和 `media-view` 可写卷。
+- `internal/provisioning/provisioning.go`、`internal/provisioning/provisioning_test.go`：更新新节点 ZIP 的环境、Compose 和说明。
+- `docs/architecture.md`、`docs/deployment-fnos.md`、`docs/media-library.md`：记录自动视图行为和目录配置。
+- 回滚方式：节点回退到上一版镜像/节点 ZIP 并恢复原来的 `${DEER_MEDIA_HOST_PATH}:/media:ro` 挂载；停止并删除 `media-view` 卷不会影响只读源目录中的原始视频。
+
 ## 2026-07-31 - Task: 建立独立后端、账户、鹿币与交易闭环
 ### What was done
 - 初始化“小鹿放映室”独立 Git 项目，建立 Go 网关、PostgreSQL 迁移、邮箱会话、鹿币钱包、易支付充值、兑换码、单片解锁和会员续费能力。

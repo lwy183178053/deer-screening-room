@@ -17,7 +17,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 ## 2. Configure the media path
 
-在宿主机确认视频根目录的真实路径，将它写入节点 `.env` 的 `DEER_MEDIA_HOST_PATH`。Compose 以 `/media:ro` 挂载，应用不会修改视频文件。`posters/` 是可写生成目录，丢失后可重新扫描生成。
+在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将源目录以只读方式挂载到 `/source`，节点自动在 `media-view` 卷的 `/media` 生成兼容视图；应用不会修改视频文件。`posters/` 是可写生成目录，丢失后可重新扫描生成。上传或解压新视频后，下一次扫描会自动更新视图。
 
 源目录约定：
 
@@ -31,7 +31,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。中文文件名较长时可能导致整个工作室目录返回 `input/output error`，节点扫描会失败。建议视频文件名控制在 240 个 UTF-8 字节以内；如果目录已经存在超长文件名，请先缩短文件名后再点击后台的“重新扫描”。
 
-如果不能修改原始文件名，可在 Windows 节点运行 `scripts\watch-media-view.cmd`。它会在 `E:\BaiduNetdiskDownload\.deer-media-view` 创建同盘硬链接视图，超长文件名使用短别名，原始完整标题写入 `catalog-titles.json`，节点仍会显示完整标题。Docker 的 `DEER_MEDIA_HOST_PATH` 应指向这个视图目录；原始视频不会被复制或删除。开发机使用 `scripts\dev-up.ps1` 启动时会先生成一次兼容视图；持续新增文件时请让 `watch-media-view.cmd` 保持运行。
+旧版 Windows 兼容视图脚本仍可用于旧节点；新版节点包不再需要手工运行它。新版节点将 `DEER_MEDIA_HOST_PATH` 指向原始视频根目录，跨平台节点容器会在启动和每次扫描前自动生成兼容视图，原始视频不会被复制或删除。
 
 ## 3. Start services
 

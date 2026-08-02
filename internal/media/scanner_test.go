@@ -195,6 +195,36 @@ func TestNodeSkipsUnchangedInventorySync(t *testing.T) {
 	}
 }
 
+func TestNodeSyncsMediaViewBeforeScan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	source := t.TempDir()
+	view := t.TempDir()
+	longName := strings.Repeat("新", 100) + ".mp4"
+	if err := os.WriteFile(filepath.Join(source, longName), []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: server.URL, NodeAPIToken: "node-token", RelayToken: "relay-token", MediaSourceRoot: source, MediaRoot: view, PosterRoot: t.TempDir(), HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	node.scanner.probe = func(string) (probeResult, error) {
+		return probeResult{DurationMS: 1000, VideoCodec: "h264", AudioCodec: "aac"}, nil
+	}
+	node.scanner.poster = func(string, string) error { return nil }
+	if err := node.rescanAndSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(node.scanner.cache) != 1 {
+		t.Fatalf("cache entries=%d", len(node.scanner.cache))
+	}
+	if _, err := os.Stat(filepath.Join(view, "catalog-titles.json")); err != nil {
+		t.Fatalf("media view manifest: %v", err)
+	}
+}
+
 func TestNodeRangeAndRelayAuthentication(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
