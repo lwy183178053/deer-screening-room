@@ -888,3 +888,17 @@
 - `web/package.json`、`web/package-lock.json`、`web/src/components/VideoPlayer.vue`、`web/src/components/VideoPlayer.test.ts`、`web/src/styles.css`：接入 Media Chrome 与快速 ICE 播放流程。
 - `.env.example`、`compose.yaml`、`deploy/cloud/.env.example`、`deploy/cloud/compose.yaml`、`README.md`、`docs/architecture.md`、`docs/security.md`、`docs/operations.md`、`docs/credits.md`：同步 STUN、播放器和隐私边界说明。
 - 回滚方式：回到本轮父提交并恢复对应运行配置；仅重建小鹿 Gateway/Web/媒体节点，coturn 可单独停止，不删除 PostgreSQL、WireGuard、媒体目录或其他业务。
+
+## 2026-08-02 - Task: 部署播放提速与 Media Chrome 更新
+### What was done
+- 以提交 `44c5d23` 归档上传到 104，仅重建 `deer-screening-room-cloud` 的 Gateway/Web 和本机 `deer-screening-room-media-1` 的 media-node。
+- 在 104 运行配置中追加 STUN 地址，保留管理员 P2P 默认关闭和所有既有秘密；PostgreSQL、WireGuard、coturn、宿主机 Caddy 以及其他业务 Compose 未重建。
+- 公网域名、健康接口、静态资源和回环健康检查均恢复正常；媒体节点新镜像启动并继续使用原只读媒体目录。
+### Testing
+- 104：`https://xiaolu.lwylink.xyz/` 和 `/api/v1/health` 返回 200；`127.0.0.1:28200/api/v1/health` 返回 200。
+- 104：`80/443` 由宿主机 Caddy，`28200` 仅回环，`38.34.191.104:3478` 的 UDP/TCP 和 `51820/udp` 监听正常；coturn 日志无启动错误。
+- 104：ModelRoute、Sub2API 及其数据库/Redis 容器保持运行；小鹿 PostgreSQL、WireGuard、coturn 未被重建。线上真实登录/手机播放和直连 candidate pair 仍需测试账号与实际网络触发，当前未伪报为已完成。
+### Notes
+- `docs/deployment-fnos.md`：补充 STUN 运行配置说明。
+- `progress.md`：追加本次生产部署、隔离证据和回滚点。
+- 回滚点：恢复 `/opt/deer-screening-room/backups/webrtc-44c5d23-20260802-084746` 中的 `.env`、Caddy 和容器记录，代码回到 `98d4757`；只重建小鹿 Gateway/Web/媒体节点，停止 coturn 时不删除卷，不操作其他业务。

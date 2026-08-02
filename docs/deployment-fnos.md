@@ -7,6 +7,7 @@
 ```bash
 cd deploy/cloud
 cp .env.example .env
+# DEER_STUN_URLS 只在管理员允许直连时使用；默认可保留为 104 的 3478 STUN 地址
 mkdir -p wireguard/wg_confs
 cp wg0.conf.example wireguard/wg_confs/wg0.conf
 ```
