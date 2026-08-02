@@ -2,7 +2,7 @@ name: ${DEER_COMPOSE_PROJECT_NAME:-deer-screening-room-media}
 
 services:
   wireguard-config:
-    image: alpine:3.22
+    image: ${DEER_CONFIG_IMAGE:-alpine:3.22}
     restart: "no"
     environment:
       DEER_NODE_WIREGUARD_ADDRESS: ${DEER_NODE_WIREGUARD_ADDRESS}
@@ -27,7 +27,7 @@ services:
     mem_limit: 64m
 
   wireguard:
-    image: lscr.io/linuxserver/wireguard@sha256:ac43e1226878d2611315172d6ea357a95cb326ee73124b91108118efc8666889
+    image: ${DEER_WIREGUARD_IMAGE:-lscr.io/linuxserver/wireguard@sha256:ac43e1226878d2611315172d6ea357a95cb326ee73124b91108118efc8666889}
     restart: unless-stopped
     cap_add: [NET_ADMIN, SYS_MODULE]
     environment:
@@ -63,7 +63,7 @@ services:
       DEER_SCAN_INTERVAL: ${DEER_SCAN_INTERVAL:-10m}
     volumes:
       - ${DEER_MEDIA_HOST_PATH}:/media:ro
-      - ./posters:/app/posters
+      - ${DEER_POSTER_HOST_PATH:-./posters}:/app/posters
     depends_on:
       wireguard:
         condition: service_started
