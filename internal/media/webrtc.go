@@ -25,11 +25,12 @@ type WebRTCSessions struct {
 }
 
 type webrtcSession struct {
-	pc     *webrtc.PeerConnection
-	ffmpeg *exec.Cmd
-	udp    []net.PacketConn
-	cancel context.CancelFunc
-	done   <-chan error
+	pc        *webrtc.PeerConnection
+	ffmpeg    *exec.Cmd
+	udp       []net.PacketConn
+	cancel    context.CancelFunc
+	done      chan error
+	startOnce sync.Once
 }
 
 type WebRTCOffer struct {
@@ -138,29 +139,18 @@ func (m *WebRTCSessions) create(offer WebRTCOffer) (WebRTCAnswer, error) {
 	ffmpegArguments := []string{"-hide_banner", "-loglevel", "error", "-re", "-i", path, "-map", "0:v:0"}
 	ffmpegArguments = append(ffmpegArguments, videoArguments...)
 	ffmpegArguments = append(ffmpegArguments, "-an", "-f", "rtp", fmt.Sprintf("rtp://127.0.0.1:%d?pkt_size=1200&payload_type=96", videoPort), "-map", "0:a:0?", "-vn", "-c:a", "libopus", "-b:a", "96k", "-f", "rtp", fmt.Sprintf("rtp://127.0.0.1:%d?pkt_size=1200&payload_type=111", audioPort))
-	cmd := exec.CommandContext(ctx, "ffmpeg", ffmpegArguments...)
-	if err := cmd.Start(); err != nil {
-		udpVideo.Close()
-		udpAudio.Close()
-		pc.Close()
-		cancel()
-		return WebRTCAnswer{}, err
-	}
-	done := make(chan error, 1)
-	session := &webrtcSession{pc: pc, ffmpeg: cmd, udp: []net.PacketConn{udpVideo, udpAudio}, cancel: cancel, done: done}
+	session := &webrtcSession{pc: pc, udp: []net.PacketConn{udpVideo, udpAudio}, cancel: cancel, done: make(chan error, 1)}
 	m.mu.Lock()
 	m.sessions[offer.SessionID] = session
 	m.mu.Unlock()
-	go func() {
-		done <- cmd.Wait()
-		close(done)
-		m.close(offer.SessionID)
-	}()
 	go func() {
 		<-ctx.Done()
 		m.close(offer.SessionID)
 	}()
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateConnected {
+			m.startFFmpeg(offer.SessionID, session, ctx, path, ffmpegArguments)
+		}
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed || state == webrtc.PeerConnectionStateDisconnected {
 			m.close(offer.SessionID)
 		}
@@ -191,6 +181,29 @@ func (m *WebRTCSessions) create(offer WebRTCOffer) (WebRTCAnswer, error) {
 		return WebRTCAnswer{}, errors.New("missing local description")
 	}
 	return WebRTCAnswer{SessionID: offer.SessionID, SDP: local.SDP, Type: local.Type.String()}, nil
+}
+
+func (m *WebRTCSessions) startFFmpeg(sessionID string, session *webrtcSession, ctx context.Context, path string, arguments []string) {
+	session.startOnce.Do(func() {
+		cmd := exec.CommandContext(ctx, "ffmpeg", arguments...)
+		if err := cmd.Start(); err != nil {
+			m.close(sessionID)
+			return
+		}
+		m.mu.Lock()
+		if m.sessions[sessionID] != session {
+			m.mu.Unlock()
+			_ = cmd.Process.Kill()
+			return
+		}
+		session.ffmpeg = cmd
+		m.mu.Unlock()
+		go func() {
+			session.done <- cmd.Wait()
+			close(session.done)
+			m.close(sessionID)
+		}()
+	})
 }
 
 func probeH264Profile(ctx context.Context, path string) (string, int, error) {

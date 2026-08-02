@@ -32,6 +32,7 @@ type Config struct {
 	PasswordHashJobs  int
 	UserStreamRPM     int
 	TurnURLs          []string
+	StunURLs          []string
 	TurnSecret        string
 	TurnTTL           time.Duration
 	NodeCredentials   map[string]NodeCredential
@@ -60,6 +61,7 @@ func Load() (Config, error) {
 		PasswordHashJobs:  int(integer("DEER_PASSWORD_HASH_CONCURRENCY", 4)),
 		UserStreamRPM:     int(integer("DEER_USER_STREAM_REQUESTS_PER_MINUTE", 120)),
 		TurnURLs:          splitCSV(os.Getenv("DEER_TURN_URLS")),
+		StunURLs:          splitCSV(os.Getenv("DEER_STUN_URLS")),
 		TurnSecret:        os.Getenv("DEER_TURN_SECRET"),
 		TurnTTL:           duration("DEER_TURN_TTL", 2*time.Hour),
 		NodeCredentials:   nodeCredentials,
@@ -77,6 +79,12 @@ func Load() (Config, error) {
 		lower := strings.ToLower(turnURL)
 		if !strings.HasPrefix(lower, "turn:") && !strings.HasPrefix(lower, "turns:") {
 			return Config{}, errors.New("DEER_TURN_URLS must contain only TURN relay URLs")
+		}
+	}
+	for _, stunURL := range cfg.StunURLs {
+		lower := strings.ToLower(stunURL)
+		if !strings.HasPrefix(lower, "stun:") {
+			return Config{}, errors.New("DEER_STUN_URLS must contain only STUN URLs")
 		}
 	}
 	if cfg.Role == "media-node" && cfg.NodeAPIToken == "" {

@@ -8,7 +8,7 @@
 
 ```powershell
 Copy-Item .env.example .env
-# 修改 DEER_MEDIA_HOST_PATH、DEER_TURN_EXTERNAL_IP 和随机密钥
+# 修改 DEER_MEDIA_HOST_PATH、DEER_TURN_EXTERNAL_IP、DEER_STUN_URLS 和随机密钥
 powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1
 ```
 

@@ -204,7 +204,12 @@ func (a *API) turnServers() []webrtc.ICEServer {
 	username := fmt.Sprintf("%d:%s", expires, "deerroom")
 	h := hmac.New(sha1.New, []byte(a.turnSecret))
 	_, _ = h.Write([]byte(username))
-	return []webrtc.ICEServer{{URLs: a.turnURLs, Username: username, Credential: base64.StdEncoding.EncodeToString(h.Sum(nil))}}
+	servers := make([]webrtc.ICEServer, 0, 2)
+	if a.p2pEnabled.Load() && len(a.stunURLs) > 0 {
+		servers = append(servers, webrtc.ICEServer{URLs: a.stunURLs})
+	}
+	servers = append(servers, webrtc.ICEServer{URLs: a.turnURLs, Username: username, Credential: base64.StdEncoding.EncodeToString(h.Sum(nil))})
+	return servers
 }
 
 func (a *API) nodeAuthorized(r *http.Request, nodeName, baseURL string) bool {

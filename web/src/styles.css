@@ -225,11 +225,11 @@ textarea { min-height: 140px; padding-top: 10px; padding-bottom: 10px; resize: v
 .watch-topbar > span { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .watch-main { display: grid; justify-items: center; align-content: start; gap: 20px; width: 100%; min-height: calc(100vh - 66px); margin: 0; padding: 28px max(16px, calc((100vw - 1380px) / 2)) 40px; }
 .watch-player { width: min(1280px, 100%); overflow: hidden; border: 1px solid #ded9d2; border-radius: 8px; background: #000; }
-.native-player-shell { display: grid; width: 100%; background: #111; }
-.native-player { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; object-fit: contain; }
-.native-player-tools { display: flex; align-items: center; justify-content: flex-end; min-height: 44px; border-top: 1px solid #333; padding: 5px 10px; color: #eee; }
-.native-player-tools label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.native-player-tools select { height: 32px; border-color: #4b4b4b; background: #222; color: white; }
+.media-player { --media-primary-color: #f6f4ef; --media-secondary-color: #b8b4ac; --media-control-background: rgba(17,17,16,.94); --media-control-hover-background: #2c2b29; display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+.media-player-video { display: block; width: 100%; height: 100%; background: #000; object-fit: contain; }
+.media-player media-control-bar { min-height: 44px; padding: 0 8px; }
+.media-player media-time-range { flex: 1 1 auto; min-width: 40px; }
+.media-player media-time-display { white-space: nowrap; }
 .watch-main footer { width: min(1280px, 100%); }
 .playback-link-status { display: flex; align-items: center; gap: 7px; width: max-content; margin-bottom: 12px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #a6a29c; }

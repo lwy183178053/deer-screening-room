@@ -32,6 +32,7 @@ type Options struct {
 	UserStreamRPM           int
 	NodeCredentials         map[string]NodeCredential
 	TurnURLs                []string
+	StunURLs                []string
 	TurnSecret              string
 	TurnTTL                 time.Duration
 	P2PEnabled              bool
@@ -51,6 +52,7 @@ type API struct {
 	nodeCredentials map[string]NodeCredential
 	nodeStates      *nodeStateStore
 	turnURLs        []string
+	stunURLs        []string
 	turnSecret      string
 	turnTTL         time.Duration
 	p2pEnabled      atomic.Bool
@@ -82,6 +84,7 @@ func New(options Options) http.Handler {
 		nodeCredentials: options.NodeCredentials,
 		nodeStates:      newNodeStateStore(),
 		turnURLs:        options.TurnURLs,
+		stunURLs:        options.StunURLs,
 		turnSecret:      options.TurnSecret,
 		turnTTL:         options.TurnTTL,
 	}

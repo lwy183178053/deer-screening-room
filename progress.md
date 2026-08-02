@@ -871,3 +871,20 @@
 - `docs/deployment-fnos.md`：补充多公网 IP 主机的 TURN 单地址绑定要求。
 - `progress.md`：追加生产部署、隔离验证、真实播放证据和回滚点。
 - 回滚点：云端备份位于 `/opt/deer-screening-room/backups/webrtc-20260802-033338`，旧代码目录为 `/opt/deer-screening-room/app.pre-webrtc-20260802-033338`；先停止小鹿 coturn，再原子恢复旧代码目录并仅重建旧 Gateway/Web，不重建 PostgreSQL 或 WireGuard。恢复数据库时使用备份内 `postgres.dump`。本机运行配置备份位于被忽略的 `deploy/media-node/wireguard/runtime-backups/`；代码回到 `c984c94` 后只重建 media-node，不操作 WireGuard、其他容器或原视频。
+
+## 2026-08-02 - Task: 提速 WebRTC 播放并升级播放器
+### What was done
+- 接入 Media Chrome 4.19.2，为 WebRTC MediaStream 提供移动端友好的播放、音量、进度、倍速和全屏控件。
+- 增加 `DEER_STUN_URLS`；管理员关闭直连时仍只使用 TURN，开启直连时才同时下发 STUN 并允许 all 策略。
+- 将浏览器 ICE 等待上限降为 1.5 秒；节点在 PeerConnection 建立后启动 FFmpeg，减少协商前丢帧和首帧等待。
+- 更新本地/云端配置示例、架构、安全、运维和依赖说明。
+### Testing
+- `go test ./...`、`go vet ./...`、`npm.cmd run build`、`npm.cmd run test`、`git diff --check`：通过。
+- 未执行真实公网部署、真实手机播放和 Playwright 本轮回归；生产验收仍需在部署后分别检查 TURN-only、STUN/直连候选和首帧时间。
+### Notes
+- `internal/config/config.go`、`internal/config/config_test.go`：新增 STUN URL 配置与格式校验。
+- `internal/httpapi/router.go`、`internal/httpapi/media.go`、`internal/httpapi/turn_test.go`、`cmd/gateway/main.go`：按管理员策略生成 STUN/TURN ICE 配置。
+- `internal/media/webrtc.go`：延后 FFmpeg 启动至 PeerConnection connected。
+- `web/package.json`、`web/package-lock.json`、`web/src/components/VideoPlayer.vue`、`web/src/components/VideoPlayer.test.ts`、`web/src/styles.css`：接入 Media Chrome 与快速 ICE 播放流程。
+- `.env.example`、`compose.yaml`、`deploy/cloud/.env.example`、`deploy/cloud/compose.yaml`、`README.md`、`docs/architecture.md`、`docs/security.md`、`docs/operations.md`、`docs/credits.md`：同步 STUN、播放器和隐私边界说明。
+- 回滚方式：回到本轮父提交并恢复对应运行配置；仅重建小鹿 Gateway/Web/媒体节点，coturn 可单独停止，不删除 PostgreSQL、WireGuard、媒体目录或其他业务。

@@ -33,6 +33,18 @@ func TestTurnServersUseTemporaryRESTCredentials(t *testing.T) {
 	}
 }
 
+func TestTurnServersAddSTUNOnlyWhenDirectP2PIsEnabled(t *testing.T) {
+	api := &API{now: func() time.Time { return time.Unix(100, 0) }, turnURLs: []string{"turn:turn.example.test:3478"}, stunURLs: []string{"stun:stun.example.test:3478"}, turnSecret: "secret", turnTTL: time.Hour}
+	if got := api.turnServers(); len(got) != 1 || got[0].URLs[0] != "turn:turn.example.test:3478" {
+		t.Fatalf("relay servers=%+v", got)
+	}
+	api.p2pEnabled.Store(true)
+	got := api.turnServers()
+	if len(got) != 2 || got[0].URLs[0] != "stun:stun.example.test:3478" || got[1].URLs[0] != "turn:turn.example.test:3478" {
+		t.Fatalf("direct servers=%+v", got)
+	}
+}
+
 func TestNodeOfferPayloadUsesGatewayICEPolicy(t *testing.T) {
 	api := &API{
 		now: func() time.Time { return time.Unix(100, 0) }, turnURLs: []string{"turn:trusted.example.test:3478"},

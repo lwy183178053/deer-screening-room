@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
 import type { IceServer } from '../types'
+import 'media-chrome'
 
 const props = defineProps<{ sessionId: string; iceServers: IceServer[]; p2pEnabled: boolean }>()
 const emit = defineEmits<{ status: [value: 'connecting' | 'direct' | 'turn' | 'failed']; error: [value: string] }>()
@@ -14,7 +15,7 @@ function waitForICE(current: RTCPeerConnection) {
   if (current.iceGatheringState === 'complete') return Promise.resolve()
   return new Promise<void>(resolve => {
     const finish = () => { current.onicegatheringstatechange = null; resolve() }
-    const timer = window.setTimeout(finish, 5000)
+    const timer = window.setTimeout(finish, 1500)
     current.onicegatheringstatechange = () => {
       if (current.iceGatheringState === 'complete') { window.clearTimeout(timer); finish() }
     }
@@ -48,8 +49,8 @@ async function connect() {
     if (current.connectionState === 'failed') { emit('status', 'failed'); emit('error', 'WebRTC 播放连接失败') }
   }
   const offer = await peer.createOffer()
-  const iceComplete = waitForICE(current)
   await peer.setLocalDescription(offer)
+  const iceComplete = waitForICE(current)
   await iceComplete
   if (!peer.localDescription) throw new Error('WebRTC offer 创建失败')
   const answer = await api<{ sdp: string; type: RTCSdpType }>(`/api/v1/p2p/${props.sessionId}/offer`, { method: 'POST', body: JSON.stringify({ sdp: peer.localDescription.sdp, type: peer.localDescription.type }) })
@@ -63,10 +64,16 @@ onBeforeUnmount(() => { closed = true; if (video.value) video.value.srcObject = 
 </script>
 
 <template>
-  <div class="native-player-shell">
-    <video ref="video" class="native-player" controls autoplay playsinline preload="metadata" />
-    <div class="native-player-tools">
-      <label>播放速度<select v-model.number="playbackRate" aria-label="播放速度"><option :value="0.75">0.75x</option><option :value="1">1x</option><option :value="1.25">1.25x</option><option :value="1.5">1.5x</option><option :value="2">2x</option></select></label>
-    </div>
-  </div>
+  <media-controller class="media-player" defaultstreamtype="on-demand">
+    <video ref="video" slot="media" class="media-player-video native-player" autoplay playsinline preload="metadata" />
+    <media-control-bar>
+      <media-play-button></media-play-button>
+      <media-mute-button></media-mute-button>
+      <media-volume-range></media-volume-range>
+      <media-time-range></media-time-range>
+      <media-time-display showduration></media-time-display>
+      <media-playback-rate-button></media-playback-rate-button>
+      <media-fullscreen-button></media-fullscreen-button>
+    </media-control-bar>
+  </media-controller>
 </template>

@@ -52,7 +52,7 @@ func main() {
 		NodeAPIToken:            cfg.NodeAPIToken,
 		PasswordHashConcurrency: cfg.PasswordHashJobs, UserStreamRPM: cfg.UserStreamRPM,
 		NodeCredentials: nodeCredentials,
-		TurnURLs:        cfg.TurnURLs, TurnSecret: cfg.TurnSecret, TurnTTL: cfg.TurnTTL,
+		TurnURLs:        cfg.TurnURLs, StunURLs: cfg.StunURLs, TurnSecret: cfg.TurnSecret, TurnTTL: cfg.TurnTTL,
 		P2PEnabled: p2pEnabled,
 	})
 	if err := database.CleanupExpired(ctx, time.Now()); err != nil {

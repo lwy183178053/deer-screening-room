@@ -6,13 +6,13 @@
 
 播放数据流如下：
 
-1. 浏览器向 Gateway 创建播放会话并取得临时 TURN REST 凭据。
+1. 浏览器向 Gateway 创建播放会话并取得临时 TURN REST 凭据；管理员开启直连时同时取得 STUN 地址。
 2. 浏览器生成 SDP offer，Gateway 根据已授权会话查找媒体节点。
 3. Gateway 通过 WireGuard 将 offer、服务端 ICE 配置和当前直连策略转发给节点。
 4. 节点用 FFmpeg 读取只读媒体文件。浏览器 offer 已声明支持的 H.264 profile 直接复用为 RTP；未协商的 High 等 profile 在会话内用低延迟 Baseline 转码，AAC 转 Opus；Pion 返回 SDP answer。
 5. 媒体字节在浏览器与节点间直连，或经 coturn 中继；Gateway 不接收媒体字节。
 
-管理员设置 `p2p_enabled=false` 为默认隐私模式，浏览器和节点两端均强制 `ICETransportPolicyRelay`，观看者只看到 TURN relay candidate。设置为 `true` 时允许 host/server-reflexive candidate；Pion 使用 mDNS 隐藏局域网 host 地址，但直连仍可能向 WebRTC 对端公开公网候选，这是低延迟与节点位置隐私之间的明确取舍。
+管理员设置 `p2p_enabled=false` 为默认隐私模式，浏览器和节点两端均强制 `ICETransportPolicyRelay`，观看者只看到 TURN relay candidate。设置为 `true` 时 Gateway 才下发 STUN 并允许 host/server-reflexive candidate；Pion 使用 mDNS 隐藏局域网 host 地址，但直连仍可能向 WebRTC 对端公开公网候选，这是低延迟与节点位置隐私之间的明确取舍。
 
 媒体节点保存真实路径及媒体键映射，Gateway 只保存媒体键、工作室、标题和技术元数据。一级目录对应工作室；视频消失时标记不可用，不删除永久权益。节点离线超过 90 秒后，其内容从公开目录隐藏。
 

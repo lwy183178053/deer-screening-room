@@ -69,4 +69,23 @@ describe('VideoPlayer', () => {
     expect(requests.some(request => request.path === '/api/v1/p2p/session-id' && request.method === 'DELETE')).toBe(true)
     container.remove()
   })
+
+  it('uses direct ICE policy when enabled and renders Media Chrome controls', async () => {
+    vi.stubGlobal('RTCPeerConnection', PeerConnectionMock)
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+      return new Response(JSON.stringify({ sdp: 'node-answer', type: 'answer' }), { status: 200 })
+    }))
+    const container = document.createElement('div')
+    document.body.append(container)
+    const app = createApp(VideoPlayer, { sessionId: 'direct', iceServers: [{ urls: ['stun:stun.example.test:3478'] }], p2pEnabled: true })
+    app.mount(container)
+    for (let index = 0; index < 8; index += 1) { await Promise.resolve(); await nextTick() }
+    expect(PeerConnectionMock.instances[0].configuration.iceTransportPolicy).toBe('all')
+    expect(container.querySelector('media-controller')).not.toBeNull()
+    expect(container.querySelector('media-control-bar')).not.toBeNull()
+    app.unmount()
+    container.remove()
+  })
 })

@@ -30,7 +30,12 @@ func TestGatewayRequiresTURNRelayConfiguration(t *testing.T) {
 		t.Fatal("gateway accepted STUN-only configuration")
 	}
 	t.Setenv("DEER_TURN_URLS", "turn:turn.example.test:3478")
+	t.Setenv("DEER_STUN_URLS", "stun:stun.example.test:3478")
 	if _, err := Load(); err != nil {
 		t.Fatalf("gateway rejected TURN configuration: %v", err)
+	}
+	t.Setenv("DEER_STUN_URLS", "turn:not-stun.example.test:3478")
+	if _, err := Load(); err == nil {
+		t.Fatal("gateway accepted non-STUN URL")
 	}
 }
