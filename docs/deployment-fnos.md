@@ -13,7 +13,7 @@ mkdir -p wireguard/wg_confs
 cp wg0.conf.example wireguard/wg_confs/wg0.conf
 ```
 
-先在管理员页面创建节点并下载一次性安装包。安装包内固定该节点的 WireGuard 地址、公钥、私钥和 API/Relay Token；删除或轮换节点后旧安装包立即失效。云端 WireGuard Peer 由 Gateway 自动应用，不再维护静态节点凭据映射。云安全组只需开放 `80/tcp`、`443/tcp`、`443/udp` 和 `51820/udp`；不要开放节点的 `8081`。
+先在管理员页面创建节点并下载一次性安装包。安装包内固定该节点的 WireGuard 地址、公钥、私钥和 API/Relay Token；删除或轮换节点后旧安装包立即失效。云端 WireGuard Peer 由 Gateway 自动应用，不再维护静态节点凭据映射。删除节点时会撤销 Peer 并清理云端目录索引、视频权益和播放会话，源视频文件保留。云安全组只需开放 `80/tcp`、`443/tcp`、`443/udp` 和 `51820/udp`；不要开放节点的 `8081`。
 
 ## 2. Configure the media path
 

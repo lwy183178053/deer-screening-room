@@ -1059,3 +1059,21 @@
 - `deploy/media-node/compose.yaml`、`deploy/media-node/compose.ugreen.yaml`、`internal/provisioning/provisioning.go`：健康检查、地址规范化和安装包 Compose 模板。
 - 当前电脑旧节点容器与空项目网络已删除；旧绑定 WireGuard 配置目录仍作为本地忽略的回滚副本保留，未与新 `deer_wireguard-data` 卷混用。原始媒体目录和 poster 缓存未删除。
 - 回滚方式：104 仅使用 `/opt/deer-screening-room/app.range-resume-20260802-2` 的 Compose 文件和备份 WireGuard/Caddy 配置恢复 Gateway/Web；当前电脑仅停止 `deer` 项目并恢复旧 media-node Compose，不使用 `-v`，不触碰其他业务容器。
+
+## 2026-08-03 - Task: 修复 NAS 节点删除 502 并完成删除
+### What was done
+- 修复 Gateway 读取 PostgreSQL `inet` 地址后携带 `/32` 调用 WireGuard provisioner 的问题，撤销前统一转换为主机地址，避免 provisioner 返回 `peer_remove_failed`。
+- 在 104 仅切换 Gateway 和 `wireguard-provisioner` 到修复镜像；Web、WireGuard、PostgreSQL、ModelRoute、Sub2API 及其 Redis/MySQL 未重启或修改。
+- 正式删除节点 `nas-media-1`（ID `2549`），接口返回 `204`；云端数据库节点记录、该节点 Peer 和相关级联数据已清理，`windows-media`（ID `2423`）保留并继续握手。
+
+### Testing
+- `go test ./internal/httpapi ./internal/provisioning ./internal/wireguard`：通过，包含 `/32` 地址归一化回归测试。
+- `docker build --tag deerroom-app:node-provisioning-20260803-5 .`：本地通过；104 本机同标签镜像构建通过。
+- `https://xiaolu.lwylink.xyz/api/v1/health`：返回 `200`；管理员删除请求：`204 No Content`。
+- 104 数据库仅剩 `windows-media`；WireGuard 配置和运行状态仅剩 `10.77.0.2/32`，最新握手正常；小鹿和其他业务容器状态保持运行。
+
+### Notes
+- `internal/httpapi/node_provisioning.go`、`internal/httpapi/node_provisioning_test.go`：删除节点时归一化 `inet` CIDR 地址并增加回归测试。
+- `docs/deployment-fnos.md`、`docs/operations.md`：补充节点删除清理范围和源视频保留说明。
+- 104 当前发布目录：`/opt/deer-screening-room/app.node-provisioning-20260803-5`；旧目录 `/opt/deer-screening-room/app.node-provisioning-20260803-1` 和旧镜像仍保留。
+- 回滚点：仅将小鹿 Compose 的 `DEER_VERSION` 恢复为 `node-provisioning-20260803-4` 并重建 Gateway/provisioner；不使用 `-v`，不操作 `windows-media` 或其他业务容器。
