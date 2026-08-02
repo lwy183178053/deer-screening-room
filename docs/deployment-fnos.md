@@ -53,15 +53,15 @@ For a private GHCR package, create a GitHub token with `read:packages` and sign 
 echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u lwy183178053 --password-stdin
 ```
 
-Set the selected image tag in `deploy/media-node/.env`, then import both Compose files in the NAS Docker project. The registry overlay removes the local `build` step and makes the project pull the image:
+Set the selected image tag and node-specific values in `deploy/media-node/.env.ugreen.example`, then import `compose.ugreen.yaml` as one NAS Docker project. The file has no local `build` step and reads node differences from the project's environment editor:
 
 ```bash
 DEER_VERSION=v0.1.0
-docker compose --env-file .env -f compose.yaml -f compose.registry.yaml pull media-node
-docker compose --env-file .env -f compose.yaml -f compose.registry.yaml up -d --no-build
+docker compose --env-file .env.ugreen -f compose.ugreen.yaml pull
+docker compose --env-file .env.ugreen -f compose.ugreen.yaml up -d --no-build
 ```
 
-The image contains both `/app/media-node` and `/app/gateway`; this project starts only `/app/media-node`. WireGuard, the media bind mount, node credentials and poster cache remain NAS-side runtime configuration.
+The image contains both `/app/media-node` and `/app/gateway`; this project starts only `/app/media-node`. WireGuard, the media bind mount, node credentials and poster cache remain NAS-side runtime configuration. For another node, copy the same template and change the node name, WireGuard address/keys, tokens and media path.
 
 独占 `80/443` 的服务器先启动云端：
 

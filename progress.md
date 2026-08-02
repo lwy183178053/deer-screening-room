@@ -949,3 +949,22 @@
 - `deploy/media-node/.env.example`、`docs/deployment-fnos.md`：补充镜像版本和绿联 NAS 拉取说明。
 - `progress.md`：追加仓库与镜像发布证据。
 - 回滚方式：NAS 将 `DEER_VERSION` 指向历史 GHCR 标签后执行 `docker compose pull` 和 `up -d --no-build`；代码侧使用 Git 历史提交恢复工作流。
+
+## 2026-08-02 - Task: 收敛媒体节点为面板环境变量配置
+### What was done
+- 新增单文件 `compose.ugreen.yaml`，媒体节点镜像、WireGuard 镜像、节点名称、地址、公钥、Token、Gateway 端点、扫描周期和海报目录全部由环境变量注入。
+- 新增绿联环境变量模板，媒体目录使用唯一的 `/CHANGE_ME` 占位路径；同一模板可复制给其他节点使用。
+- 保留本地开发 Compose 和 registry 覆盖配置，绿联项目可直接导入单文件并使用已导入的 amd64 镜像。
+
+### Testing
+- `docker compose --env-file deploy/media-node/.env.ugreen.example -f deploy/media-node/compose.ugreen.yaml config --quiet`：待执行。
+- `docker compose --env-file deploy/media-node/.env.example -f deploy/media-node/compose.yaml -f deploy/media-node/compose.registry.yaml config --quiet`：待执行。
+- `git diff --check`：待执行。
+
+### Notes
+- `deploy/media-node/compose.ugreen.yaml`：绿联 Docker 单文件项目配置。
+- `deploy/media-node/.env.ugreen.example`：节点差异环境变量模板。
+- `deploy/media-node/compose.yaml`、`compose.registry.yaml`、`.env.example`：统一镜像、WireGuard 和目录变量。
+- `docs/deployment-fnos.md`：更新单文件导入与多节点复制说明。
+- `progress.md`：追加本轮配置收敛记录。
+- 回滚方式：绿联项目切回上一版 Compose 文件或停止该项目；云端节点凭据和 Windows 节点运行状态保持原样。
