@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-08-03 - Task: 更新本机媒体节点到自动视图镜像
+### What was done
+- 将本机 `deer-node` 更新为公开 GHCR 镜像 `v0.1.1`，保留现有 `deer-wg` 容器、WireGuard 卷和节点身份，仅重建媒体节点。
+- 发现 Windows Docker 直接枚举原始长中文目录会返回 `input/output error`，恢复并启动主机 `watch-media-view.ps1`，节点改为读取 `.deer-media-view` 后正常扫描。
+- 更新部署文档，明确 Linux/NAS 原生目录使用容器自动视图，Windows Docker 超长目录使用主机监听器视图。
+
+### Testing
+- `docker pull ghcr.io/lwy183178053/deer-screening-room:v0.1.1`：成功，摘要为 `sha256:3a66ea94d80e11450d7d1bb212ad515cdd39e2b9e2af122e7310d40508fde615`。
+- 本机 `deer-node` 镜像为 `v0.1.1`，容器健康接口返回 `{"service":"media-node","status":"ok"}`。
+- WireGuard `deer-wg` 保持 healthy，最新握手持续更新。
+- 主机兼容视图包含 79 个视频和标题清单；节点 `/media` 视图包含 79 个可跟随链接及 `catalog-titles.json`。
+- ModelRoute、Redis、MySQL 等其他容器状态保持原样。
+
+### Notes
+- `deploy/media-node/.env`：本机忽略运行配置更新为 `v0.1.1`、GHCR 镜像和 Windows 兼容视图路径；节点凭据从最后一次本地导出包恢复。
+- `docs/deployment-fnos.md`、`docs/media-library.md`：补充 Windows Docker 长目录边界和主机监听器要求。
+- 回滚方式：停止当前 `deer` 节点项目并恢复旧节点包的 Compose/环境配置；不要删除原始媒体目录或 WireGuard 卷，`media-view` 卷可单独清理。
+
 ## 2026-08-03 - Task: 跨平台媒体兼容视图自动生成
 ### What was done
 - 媒体节点新增跨平台兼容视图同步：源目录只读挂载到 `/source`，节点在独立 `media-view` 卷的 `/media` 生成稳定短别名，优先使用硬链接，跨文件系统时回退为软链接。

@@ -31,7 +31,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。中文文件名较长时可能导致整个工作室目录返回 `input/output error`，节点扫描会失败。建议视频文件名控制在 240 个 UTF-8 字节以内；如果目录已经存在超长文件名，请先缩短文件名后再点击后台的“重新扫描”。
 
-旧版 Windows 兼容视图脚本仍可用于旧节点；新版节点包不再需要手工运行它。新版节点将 `DEER_MEDIA_HOST_PATH` 指向原始视频根目录，跨平台节点容器会在启动和每次扫描前自动生成兼容视图，原始视频不会被复制或删除。
+Linux/NAS 原生文件系统可直接使用新版节点包：将 `DEER_MEDIA_HOST_PATH` 指向原始视频根目录，节点容器会在启动和每次扫描前自动生成兼容视图。Windows Docker 如果源目录含有导致 Linux bind mount 返回 `input/output error` 的超长中文目录或文件名，必须先在宿主机运行 `scripts\watch-media-view.cmd`；它会每 20 秒更新 `.deer-media-view`，节点包的 `DEER_MEDIA_HOST_PATH` 指向该视图目录。两种方式都不会复制或删除原始视频。
 
 ## 3. Start services
 
