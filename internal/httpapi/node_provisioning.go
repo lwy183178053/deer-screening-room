@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -221,6 +222,7 @@ func (a *API) revokeNode(w http.ResponseWriter, r *http.Request) {
 			address = parsed.Hostname()
 		}
 	}
+	address = wireGuardHostAddress(address)
 	if a.peerApplier != nil {
 		if err := a.peerApplier.Revoke(r.Context(), node.Name, address); err != nil {
 			writeError(w, http.StatusBadGateway, "wireguard_apply_failed", "WireGuard Peer 撤销失败")
@@ -237,6 +239,14 @@ func (a *API) revokeNode(w http.ResponseWriter, r *http.Request) {
 
 func validNodeName(name string) bool {
 	return nodeNamePattern.MatchString(strings.TrimSpace(name))
+}
+
+func wireGuardHostAddress(address string) string {
+	address = strings.TrimSpace(address)
+	if host, _, err := net.ParseCIDR(address); err == nil {
+		return host.String()
+	}
+	return address
 }
 
 func nextAddressFromURLs(urls []string) (string, error) {
