@@ -804,3 +804,21 @@
 - `web/src/App.vue`、`web/src/styles.css`：移除 P2P 管理入口，优化账户邮箱、余额和兑换表单的移动端布局。
 - `web/src/types.ts`、`docs/api.md`、`docs/testing.md`：同步类型、API 分页和测试说明。
 - 回滚方式：恢复本轮涉及文件到当前提交；播放回档点保持 `c984c94`，生产回滚点为现有部署前备份和对应 Compose 项目，不操作其他业务容器。
+
+## 2026-08-02 - Task: 生产回滚到 Range 播放并验收
+### What was done
+- 将提交 `f0cc94c` 上传到 104，保留 WebRTC 目录为回滚点；仅重建 `deer-screening-room-cloud` 的 Gateway/Web，并停止小鹿 coturn，不删除 PostgreSQL 或 WireGuard 卷。
+- 本机仅重建 `deer-screening-room-media-1` 的 media-node，WireGuard、原始视频目录和其他容器保持不变；远端正式部署目录已切换为 Range 版本。
+- 管理后台不再显示 P2P/节点直连入口，视频恢复为 HTTP Range + Artplayer 渐进播放。
+
+### Testing
+- 104 云端 Gateway/Web 镜像为 `f0cc94c`，PostgreSQL 与 WireGuard 持续运行；`127.0.0.1:28200/api/v1/health`、公网首页和公网健康接口均返回 200。
+- 宿主机 Caddy 保持 active；`api.lwylink.xyz`、`sdk.lwylink.xyz` 仍返回 200；ModelRoute、Sub2API 等既有容器未重启。
+- 生产管理员已有 6 条已购视频；真实回环业务验收：目录 `page_size=20`，播放会话 `201`，Range 首段 `206`，读取 `1024` 字节，`Content-Range: bytes 0-1023/450881632`。
+- `go test ./...`、`go test -race ./...`、`go vet ./...`、前端单测、生产构建和 11 项 Playwright 均通过。
+
+### Notes
+- `/opt/deer-screening-room/app`：当前正式 Range 代码目录；旧 WebRTC 目录按时间戳保留，可用于回滚。
+- `/opt/deer-screening-room/releases/deerroom-f0cc94c.tar.gz`：本次部署归档；云端 coturn 容器已停止并移除，旧镜像/卷未做破坏性清理。
+- `deploy/media-node/.env`：仅本机忽略运行配置补充已有 Relay Token 和 `DEER_VERSION=f0cc94c`，未写入 Git。
+- 回滚方式：恢复 `/opt/deer-screening-room/app.webrtc-pre-range-*` 与对应备份的云端运行配置，使用旧 Compose 重新构建 Gateway/Web；本机仅恢复 media-node，PostgreSQL、WireGuard、宿主机 Caddy和其他业务不动。
