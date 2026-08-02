@@ -12,6 +12,7 @@ import (
 	"deerroom/internal/config"
 	"deerroom/internal/httpapi"
 	"deerroom/internal/password"
+	"deerroom/internal/provisioning"
 	"deerroom/internal/store"
 )
 
@@ -39,15 +40,16 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-	nodeCredentials := make(map[string]httpapi.NodeCredential, len(cfg.NodeCredentials))
-	for name, credential := range cfg.NodeCredentials {
-		nodeCredentials[name] = httpapi.NodeCredential{APIToken: credential.APIToken, RelayToken: credential.RelayToken, BaseURL: credential.BaseURL}
+	var peerApplier provisioning.PeerApplier
+	if cfg.WGProvisionerToken != "" {
+		peerApplier = provisioning.HTTPPeerApplier{URL: cfg.WGProvisionerURL, Token: cfg.WGProvisionerToken}
 	}
 	handler := httpapi.New(httpapi.Options{
 		Store: database, CookieSecure: cfg.CookieSecure, SessionTTL: cfg.SessionTTL,
-		NodeAPIToken: cfg.NodeAPIToken, RelayToken: cfg.RelayToken,
 		PasswordHashConcurrency: cfg.PasswordHashJobs, UserStreamRPM: cfg.UserStreamRPM,
-		NodeCredentials: nodeCredentials,
+		NodeSecretsKey: cfg.NodeSecretsKey, PeerApplier: peerApplier,
+		BundleImage: cfg.NodeImage, BundleVersion: cfg.NodeVersion,
+		CloudWireGuardPublicKey: cfg.CloudWireGuardPublicKey, CloudEndpoint: cfg.CloudEndpoint,
 	})
 	if err := database.CleanupExpired(ctx, time.Now()); err != nil {
 		log.Printf("initial maintenance: %v", err)

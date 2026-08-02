@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"deerroom/internal/provisioning"
 	"deerroom/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -64,6 +65,12 @@ func TestPlaybackProxyIntegration(t *testing.T) {
 	if err := db.CreateSession(ctx, tokenHash[:], user.ID, "csrf", now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	key := bytes.Repeat([]byte{4}, 32)
+	apiSealed, _ := provisioning.Seal(key, "node-token")
+	relaySealed, _ := provisioning.Seal(key, "relay-token")
+	if _, err := db.CreateProvisionedNode(ctx, "node", upstream.URL, "10.77.0.2", "public", "private", apiSealed, relaySealed, now); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.SyncMedia(ctx, "node", upstream.URL, 100, 90, []store.MediaItem{{MediaKey: "media-key", Studio: "工作室", Title: "作品", DurationMS: 1000, SizeBytes: 10, VideoCodec: "h264", AudioCodec: "aac", Compatibility: "ready"}}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +84,7 @@ func TestPlaybackProxyIntegration(t *testing.T) {
 	if _, err := db.UnlockVideo(ctx, user.ID, videos[0].ID, "HTTP-UNLOCK", now); err != nil {
 		t.Fatal(err)
 	}
-	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", Now: func() time.Time { return now }})
+	handler := New(Options{Store: db, NodeSecretsKey: key, Now: func() time.Time { return now }})
 	create := httptest.NewRequest(http.MethodPost, "/api/v1/videos/1/playback", bytes.NewReader([]byte(`{}`)))
 	create.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
 	create.Header.Set("X-CSRF-Token", "csrf")
@@ -138,7 +145,7 @@ func TestAdminUserCreditsIntegration(t *testing.T) {
 	if err := db.CreateSession(ctx, tokenHash[:], admin.ID, "csrf", now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", Now: func() time.Time { return now }})
+	handler := New(Options{Store: db, NodeSecretsKey: bytes.Repeat([]byte{4}, 32), Now: func() time.Time { return now }})
 
 	search := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?q=VIEWER", nil)
 	search.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})

@@ -3,7 +3,7 @@
 - 密码使用 Argon2id；会话 Cookie 为 HttpOnly、SameSite=Lax，生产环境启用 Secure。数据库只保存会话令牌 SHA-256。
 - 注册始终使用 5 位一次性图片验证码；登录首次失败后进入验证码模式。验证码、频率窗口和登录失败状态只保存在 Gateway 内存并自动清理过期状态，Argon2 同时计算数量默认限制为 4。
 - 所有登录态变更接口要求会话绑定的 `X-CSRF-Token`。管理员接口同时检查角色，停用用户会删除其会话。
-- Caddy 在公网直接拒绝 `/api/v1/internal/*`。生产多节点使用 `DEER_NODE_CREDENTIALS` 为每台节点绑定唯一名称、内部地址、API Token 和 Relay Token；本地单节点仍兼容旧的两个 Token 配置。
+- Caddy 在公网直接拒绝 `/api/v1/internal/*`。生产节点凭据只保存在 Gateway 数据库的加密字段和对应的一次性安装包中；Gateway 不再读取静态节点凭据映射或单节点 Token fallback。删除或轮换节点会立即使旧安装包凭据失效。
 - 视频源目录只读挂载。浏览器和 Gateway 永远不接收 NAS 真实路径；媒体节点不拼接 URL 路径访问文件。
 - 播放只提供 inline Range 接口，没有下载按钮或 attachment 接口。网页 DRM 不在 V1 范围内，具备技术能力的用户仍可能保存收到的媒体字节。
 - 视频传输不设置账号带宽、并发媒体 GET 或节点媒体连接槽位上限，避免限制正常播放吞吐；Gateway 仍保留每账号每分钟 120 次播放请求频率保护，异常请求只临时返回 `429`，不记录每日流量或永久封号。

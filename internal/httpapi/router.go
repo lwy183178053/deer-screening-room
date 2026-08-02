@@ -10,44 +10,49 @@ import (
 	"net/http"
 	"time"
 
+	"deerroom/internal/provisioning"
 	"deerroom/internal/store"
 )
 
 const SessionCookieName = "deer_session"
 
-type NodeCredential struct {
-	APIToken   string
-	RelayToken string
-	BaseURL    string
-}
-
 type Options struct {
 	Store                   *store.Postgres
 	CookieSecure            bool
 	SessionTTL              time.Duration
-	NodeAPIToken            string
-	RelayToken              string
 	HTTPClient              *http.Client
 	Now                     func() time.Time
 	PasswordHashConcurrency int
 	UserStreamRPM           int
-	NodeCredentials         map[string]NodeCredential
+	NodeSecretsKey          []byte
+	PeerApplier             provisioning.PeerApplier
+	BundleImage             string
+	BundleVersion           string
+	CloudWireGuardPublicKey string
+	CloudEndpoint           string
+	GatewayWireGuardAddress string
+	GatewayURL              string
 }
 
 type API struct {
-	store           *store.Postgres
-	cookieSecure    bool
-	sessionTTL      time.Duration
-	nodeAPIToken    string
-	relayToken      string
-	httpClient      *http.Client
-	now             func() time.Time
-	captchas        *captchaManager
-	authGuard       *authGuard
-	passwordSlots   chan struct{}
-	streamGuard     *streamGuard
-	nodeCredentials map[string]NodeCredential
-	nodeStates      *nodeStateStore
+	store          *store.Postgres
+	cookieSecure   bool
+	sessionTTL     time.Duration
+	httpClient     *http.Client
+	now            func() time.Time
+	captchas       *captchaManager
+	authGuard      *authGuard
+	passwordSlots  chan struct{}
+	streamGuard    *streamGuard
+	nodeStates     *nodeStateStore
+	nodeSecretsKey []byte
+	peerApplier    provisioning.PeerApplier
+	bundleImage    string
+	bundleVersion  string
+	cloudPublicKey string
+	cloudEndpoint  string
+	gatewayAddress string
+	gatewayURL     string
 }
 
 func New(options Options) http.Handler {
@@ -68,14 +73,19 @@ func New(options Options) http.Handler {
 	}
 	api := &API{
 		store: options.Store, cookieSecure: options.CookieSecure, sessionTTL: options.SessionTTL,
-		nodeAPIToken: options.NodeAPIToken,
-		relayToken:   options.RelayToken,
-		httpClient:   options.HTTPClient, now: options.Now,
+		httpClient: options.HTTPClient, now: options.Now,
 		captchas: newCaptchaManager(options.Now), authGuard: newAuthGuard(options.Now),
-		passwordSlots:   make(chan struct{}, options.PasswordHashConcurrency),
-		streamGuard:     newStreamGuard(options.Now, options.UserStreamRPM),
-		nodeCredentials: options.NodeCredentials,
-		nodeStates:      newNodeStateStore(),
+		passwordSlots:  make(chan struct{}, options.PasswordHashConcurrency),
+		streamGuard:    newStreamGuard(options.Now, options.UserStreamRPM),
+		nodeStates:     newNodeStateStore(),
+		nodeSecretsKey: append([]byte(nil), options.NodeSecretsKey...),
+		peerApplier:    options.PeerApplier,
+		bundleImage:    options.BundleImage,
+		bundleVersion:  options.BundleVersion,
+		cloudPublicKey: options.CloudWireGuardPublicKey,
+		cloudEndpoint:  options.CloudEndpoint,
+		gatewayAddress: options.GatewayWireGuardAddress,
+		gatewayURL:     options.GatewayURL,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", api.health)

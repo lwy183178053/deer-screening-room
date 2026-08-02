@@ -1,16 +1,18 @@
 package config
 
-import "testing"
+import (
+	"bytes"
+	"encoding/base64"
+	"testing"
+)
 
-func TestParseNodeCredentials(t *testing.T) {
-	credentials, err := parseNodeCredentials(`{"node-a":{"api_token":"api-a","relay_token":"relay-a","base_url":"http://10.77.0.2:8081/"}}`)
-	if err != nil {
-		t.Fatal(err)
+func TestParseNodeSecretsKey(t *testing.T) {
+	key := bytes.Repeat([]byte{9}, 32)
+	parsed, err := parseNodeSecretsKey(base64.RawStdEncoding.EncodeToString(key))
+	if err != nil || !bytes.Equal(parsed, key) {
+		t.Fatalf("parsed=%x err=%v", parsed, err)
 	}
-	if len(credentials) != 1 || credentials["node-a"].BaseURL != "http://10.77.0.2:8081" {
-		t.Fatalf("credentials=%+v", credentials)
-	}
-	if _, err := parseNodeCredentials(`{"node-a":{"api_token":"","relay_token":"relay-a","base_url":"http://node"}}`); err == nil {
-		t.Fatal("accepted incomplete credentials")
+	if _, err := parseNodeSecretsKey("short"); err == nil {
+		t.Fatal("accepted short key")
 	}
 }

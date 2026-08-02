@@ -1,7 +1,8 @@
-name: ${DEER_COMPOSE_PROJECT_NAME:-deer-screening-room-media}
+name: ${DEER_COMPOSE_PROJECT_NAME:-deer}
 
 services:
-  wireguard-config:
+  wg-init:
+    container_name: deer-wg-init
     image: ${DEER_CONFIG_IMAGE:-alpine:3.22}
     restart: "no"
     environment:
@@ -24,7 +25,8 @@ services:
     pids_limit: 32
     mem_limit: 64m
 
-  wireguard:
+  wg:
+    container_name: deer-wg
     image: ${DEER_WIREGUARD_IMAGE:-lscr.io/linuxserver/wireguard@sha256:ac43e1226878d2611315172d6ea357a95cb326ee73124b91108118efc8666889}
     restart: unless-stopped
     cap_add: [NET_ADMIN, SYS_MODULE]
@@ -37,16 +39,22 @@ services:
       - /lib/modules:/lib/modules:ro
     sysctls:
       net.ipv4.conf.all.src_valid_mark: 1
+    healthcheck:
+      test: ["CMD-SHELL", "wg show wg0 >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
     depends_on:
-      wireguard-config:
+      wg-init:
         condition: service_completed_successfully
 
-  media-node:
+  node:
+    container_name: deer-node
     image: ${DEER_IMAGE:-ghcr.io/lwy183178053/deer-screening-room}:${DEER_VERSION:-latest}
     pull_policy: ${DEER_PULL_POLICY:-missing}
     command: ["/app/media-node"]
     restart: unless-stopped
-    network_mode: service:wireguard
+    network_mode: service:wg
     environment:
       DEER_ROLE: media-node
       DEER_HTTP_ADDR: ${DEER_HTTP_ADDR:-:8081}
@@ -62,8 +70,8 @@ services:
       - ${DEER_MEDIA_HOST_PATH}:/media:ro
       - ${DEER_POSTER_HOST_PATH:-./posters}:/app/posters
     depends_on:
-      wireguard:
-        condition: service_started
+      wg:
+        condition: service_healthy
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]

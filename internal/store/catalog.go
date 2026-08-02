@@ -202,7 +202,7 @@ func (s *Postgres) PlaybackVideo(ctx context.Context, playbackID string, userID 
 }
 
 func (s *Postgres) ListNodes(ctx context.Context, now time.Time) ([]Node, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,name,base_url,online AND COALESCE(last_seen_at>$1,false),total_bytes,available_bytes,last_seen_at FROM media_nodes ORDER BY name`, now.Add(-90*time.Second))
+	rows, err := s.pool.Query(ctx, `SELECT n.id,n.name,n.base_url,COALESCE(p.wireguard_address::text,''),p.node_id IS NOT NULL,COALESCE(p.revoked_at IS NOT NULL,false),COALESCE(p.bundle_downloaded_at IS NOT NULL,false),n.online AND COALESCE(n.last_seen_at>$1,false),n.total_bytes,n.available_bytes,n.last_seen_at FROM media_nodes n LEFT JOIN media_node_provisioning p ON p.node_id=n.id ORDER BY n.name`, now.Add(-90*time.Second))
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func (s *Postgres) ListNodes(ctx context.Context, now time.Time) ([]Node, error)
 	result := []Node{}
 	for rows.Next() {
 		var item Node
-		if err := rows.Scan(&item.ID, &item.Name, &item.BaseURL, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.LastSeenAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.BaseURL, &item.WireGuardAddress, &item.Provisioned, &item.Revoked, &item.BundleDownloaded, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.LastSeenAt); err != nil {
 			return nil, err
 		}
 		result = append(result, item)
@@ -220,11 +220,131 @@ func (s *Postgres) ListNodes(ctx context.Context, now time.Time) ([]Node, error)
 
 func (s *Postgres) NodeByID(ctx context.Context, id int64, now time.Time) (Node, error) {
 	var item Node
-	err := s.pool.QueryRow(ctx, `SELECT id,name,base_url,online AND COALESCE(last_seen_at>$2,false),total_bytes,available_bytes,last_seen_at FROM media_nodes WHERE id=$1`, id, now.Add(-90*time.Second)).Scan(&item.ID, &item.Name, &item.BaseURL, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.LastSeenAt)
+	err := s.pool.QueryRow(ctx, `SELECT n.id,n.name,n.base_url,COALESCE(p.wireguard_address::text,''),p.node_id IS NOT NULL,COALESCE(p.revoked_at IS NOT NULL,false),COALESCE(p.bundle_downloaded_at IS NOT NULL,false),n.online AND COALESCE(n.last_seen_at>$2,false),n.total_bytes,n.available_bytes,n.last_seen_at FROM media_nodes n LEFT JOIN media_node_provisioning p ON p.node_id=n.id WHERE n.id=$1`, id, now.Add(-90*time.Second)).Scan(&item.ID, &item.Name, &item.BaseURL, &item.WireGuardAddress, &item.Provisioned, &item.Revoked, &item.BundleDownloaded, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.LastSeenAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Node{}, ErrNotFound
 	}
 	return item, err
+}
+
+func (s *Postgres) ListNodeBaseURLs(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT base_url FROM media_nodes`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []string{}
+	for rows.Next() {
+		var baseURL string
+		if err := rows.Scan(&baseURL); err != nil {
+			return nil, err
+		}
+		result = append(result, baseURL)
+	}
+	return result, rows.Err()
+}
+
+func (s *Postgres) CreateProvisionedNode(ctx context.Context, name, baseURL, address, publicKey, privateKeySealed, apiSealed, relaySealed string, now time.Time) (ProvisionedNode, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return ProvisionedNode{}, err
+	}
+	defer tx.Rollback(ctx)
+	var node ProvisionedNode
+	err = tx.QueryRow(ctx, `INSERT INTO media_nodes(name,base_url,online,last_seen_at,updated_at) VALUES($1,$2,false,$3,$3) RETURNING id,name,base_url,online,total_bytes,available_bytes,last_seen_at`, name, baseURL, now).
+		Scan(&node.ID, &node.Name, &node.BaseURL, &node.Online, &node.TotalBytes, &node.AvailableBytes, &node.LastSeenAt)
+	if isUnique(err) {
+		return ProvisionedNode{}, ErrConflict
+	}
+	if err != nil {
+		return ProvisionedNode{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO media_node_provisioning(node_id,wireguard_address,wireguard_public_key,wireguard_private_key_sealed,api_token_sealed,relay_token_sealed) VALUES($1,$2,$3,$4,$5,$6)`, node.ID, address, publicKey, privateKeySealed, apiSealed, relaySealed)
+	if isUnique(err) {
+		return ProvisionedNode{}, ErrConflict
+	}
+	if err != nil {
+		return ProvisionedNode{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ProvisionedNode{}, err
+	}
+	node.WireGuardAddress, node.WireGuardPublicKey = address, publicKey
+	node.Provisioned = true
+	node.APITokenSealed, node.RelayTokenSealed = apiSealed, relaySealed
+	return node, nil
+}
+
+func (s *Postgres) ProvisionedNodeByName(ctx context.Context, name string) (ProvisionedNode, error) {
+	return s.provisionedNode(ctx, `WHERE n.name=$1`, name)
+}
+
+func (s *Postgres) ProvisionedNodeByID(ctx context.Context, id int64) (ProvisionedNode, error) {
+	return s.provisionedNode(ctx, `WHERE n.id=$1`, id)
+}
+
+func (s *Postgres) provisionedNode(ctx context.Context, clause string, arg any) (ProvisionedNode, error) {
+	var node ProvisionedNode
+	err := s.pool.QueryRow(ctx, `SELECT n.id,n.name,n.base_url,n.online,n.total_bytes,n.available_bytes,n.last_seen_at,p.wireguard_address::text,p.wireguard_public_key,p.wireguard_private_key_sealed,p.api_token_sealed,p.relay_token_sealed,p.bundle_downloaded_at IS NOT NULL,p.revoked_at IS NOT NULL FROM media_nodes n JOIN media_node_provisioning p ON p.node_id=n.id `+clause, arg).
+		Scan(&node.ID, &node.Name, &node.BaseURL, &node.Online, &node.TotalBytes, &node.AvailableBytes, &node.LastSeenAt, &node.WireGuardAddress, &node.WireGuardPublicKey, &node.WireGuardPrivateKeySealed, &node.APITokenSealed, &node.RelayTokenSealed, &node.BundleDownloaded, &node.Revoked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ProvisionedNode{}, ErrNotFound
+	}
+	if err != nil {
+		return ProvisionedNode{}, err
+	}
+	node.Provisioned = true
+	return node, nil
+}
+
+func (s *Postgres) MarkNodeBundleDownloaded(ctx context.Context, id int64, now time.Time) error {
+	result, err := s.pool.Exec(ctx, `UPDATE media_node_provisioning SET bundle_downloaded_at=$2 WHERE node_id=$1 AND bundle_downloaded_at IS NULL AND revoked_at IS NULL`, id, now)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}
+
+func (s *Postgres) RotateProvisionedNode(ctx context.Context, id int64, apiSealed, relaySealed string) error {
+	result, err := s.pool.Exec(ctx, `UPDATE media_node_provisioning SET api_token_sealed=$2,relay_token_sealed=$3,bundle_downloaded_at=NULL,revoked_at=NULL WHERE node_id=$1`, id, apiSealed, relaySealed)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Postgres) DeleteNode(ctx context.Context, id int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var nodeID int64
+	if err := tx.QueryRow(ctx, `SELECT id FROM media_nodes WHERE id=$1 FOR UPDATE`, id).Scan(&nodeID); errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	statements := []string{
+		`DELETE FROM video_entitlements WHERE video_id IN (SELECT id FROM videos WHERE node_id=$1)`,
+		`DELETE FROM playback_sessions WHERE video_id IN (SELECT id FROM videos WHERE node_id=$1)`,
+		`DELETE FROM videos WHERE node_id=$1`,
+		`DELETE FROM studios WHERE node_id=$1`,
+		`DELETE FROM media_node_provisioning WHERE node_id=$1`,
+		`DELETE FROM media_nodes WHERE id=$1`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(ctx, statement, nodeID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 type rowScanner interface{ Scan(...any) error }

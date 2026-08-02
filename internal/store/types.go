@@ -75,13 +75,25 @@ type RedeemCodePage struct {
 }
 
 type Node struct {
-	ID             int64      `json:"id"`
-	Name           string     `json:"name"`
-	BaseURL        string     `json:"-"`
-	Online         bool       `json:"online"`
-	TotalBytes     int64      `json:"total_bytes"`
-	AvailableBytes int64      `json:"available_bytes"`
-	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
+	ID               int64      `json:"id"`
+	Name             string     `json:"name"`
+	BaseURL          string     `json:"-"`
+	WireGuardAddress string     `json:"wireguard_address,omitempty"`
+	Provisioned      bool       `json:"provisioned"`
+	Revoked          bool       `json:"revoked"`
+	BundleDownloaded bool       `json:"bundle_downloaded"`
+	Online           bool       `json:"online"`
+	TotalBytes       int64      `json:"total_bytes"`
+	AvailableBytes   int64      `json:"available_bytes"`
+	LastSeenAt       *time.Time `json:"last_seen_at,omitempty"`
+}
+
+type ProvisionedNode struct {
+	Node
+	WireGuardPublicKey        string
+	WireGuardPrivateKeySealed string
+	APITokenSealed            string
+	RelayTokenSealed          string
 }
 
 type Studio struct {

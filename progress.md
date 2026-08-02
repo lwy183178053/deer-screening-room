@@ -968,3 +968,49 @@
 - `docs/deployment-fnos.md`：更新单文件导入与多节点复制说明。
 - `progress.md`：追加本轮配置收敛记录。
 - 回滚方式：绿联项目切回上一版 Compose 文件或停止该项目；云端节点凭据和 Windows 节点运行状态保持原样。
+
+## 2026-08-03 - Task: 节点单一身份与短命名部署基线
+### What was done
+- Gateway 移除静态节点凭据映射和单节点 Token fallback，节点凭据改为数据库加密保存并按节点生成一次性 Docker 安装包。
+- 管理员节点页增加创建、一次性下载、凭据轮换和删除流程；删除会撤销 WireGuard Peer，并清理节点目录索引、视频权益和播放会话，源视频文件保留。
+- 新增 WireGuard Peer 应用器和独立 `/app/wireguard-provisioner` 入口，安装包与媒体节点 Compose 统一使用 `deer`、`deer-node`、`deer-wg`、`deer-wg-init` 短命名。
+- 安装包只需在 Docker 项目环境中设置 `DEER_MEDIA_HOST_PATH`；同步更新云端、绿联部署文档和安全说明，移除旧的第二节点模板及本轮冗余代码。
+
+### Testing
+- `go test ./...`、`go test -race ./...`、`go vet ./...`：通过。
+- `npm.cmd run test -- --run`：3 个测试文件、6 项通过；`npm.cmd run build`：通过。
+- 根目录、云端宿主 Caddy 覆盖、绿联节点和 registry 覆盖 Compose `config --quiet`：通过。
+- `git diff --check`：通过；敏感变量扫描未命中已跟踪文件。
+- `docker build -t deerroom-app:node-provisioning-20260803 .`：通过；镜像内三个入口文件均存在。
+- 104 只读盘点：小鹿现有 Gateway/Web/PostgreSQL/WireGuard 正常运行，宿主机 Caddy active，`28200` 为回环监听；ModelRoute、Sub2API 及其数据库/Redis 容器未操作。
+
+### Notes
+- `internal/httpapi/node_provisioning.go`、`internal/provisioning/`、`internal/wireguard/`、`cmd/wireguard-provisioner/`：节点创建、凭据封装、安装包和 WireGuard Peer 应用。
+- `internal/store/migrations/004_node_provisioning.sql`、`internal/store/catalog.go`、`internal/store/types.go`：节点身份字段、地址复用和级联删除。
+- `deploy/cloud/compose.yaml`、`deploy/cloud/compose.host-caddy.yaml`、`deploy/media-node/compose.ugreen.yaml`、`internal/provisioning/provisioning.go`：短命名和部署模板。
+- `web/src/App.vue`、`web/src/styles.css`、`web/src/types.ts`：管理员节点操作和移动端适配。
+- `docs/architecture.md`、`docs/deployment-fnos.md`、`docs/security.md`：架构、安装和凭据生命周期说明。
+- 回滚点：当前本地提交；线上发布前保留 104 原 `/opt/deer-screening-room/app.range-resume-20260802-2`、旧 Compose 文件、Caddyfile 和 WireGuard 配置备份。云端异常时仅恢复小鹿 Gateway/Web，节点异常时仅停止 `deer-node` 项目，不使用 `-v`，不触碰其他业务。
+
+## 2026-08-03 - Task: 部署首个短命名节点并完成切换
+### What was done
+- 将提交版本和镜像发布到 104 的独立目录 `/opt/deer-screening-room/app.node-provisioning-20260803-1`，保留旧发布目录、运行环境、WireGuard 配置和宿主机 Caddyfile 备份。
+- 104 仅重建小鹿 Gateway、Web、WireGuard 和新增的 `wireguard-provisioner`；PostgreSQL 数据卷复用但未清空，ModelRoute、Sub2API、Redis、MySQL 和宿主机 Caddy 未停止或修改。
+- 在管理员节点页删除旧节点并创建 `windows-media`，自动复用 `10.77.0.2/32`，下载并轮换一次性安装包；删除动作清理旧目录索引、视频权益和播放会话，源视频保留。
+- 当前 Windows 仅停止旧小鹿 media-node/WireGuard 容器，启动 `deer-node`/`deer-wg`/`deer-wg-init`；新增 WireGuard 健康检查，节点等待隧道就绪后再扫描，避免首启竞态。
+- 修正安装包对 PostgreSQL `inet` 的 `/32` 规范化和 Compose YAML 环境字段，安装包可解析且只需设置媒体目录变量。
+
+### Testing
+- 本地 `go test ./...`、`go test -race ./...`、`go vet ./...`：通过。
+- 前端测试 3 个文件、6 项通过；生产构建通过。
+- 根目录、云端宿主 Caddy 覆盖、绿联节点和 registry 覆盖 Compose `config --quiet`：通过；`git diff --check`：通过。
+- 104 Gateway/Web 健康接口、公网 `https://xiaolu.lwylink.xyz/api/v1/health`、公网首页 HTTPS 和 Caddy `validate`：通过。
+- 104 节点页：`windows-media` 在线、WireGuard `10.77.0.2/32`、扫描 `ok`；目录总量 79，分页首屏 20，首条视频为 AV1/AAC。
+- 真实管理员会话完成一次解锁、播放会话和 Range 验证：HTTP `206 Partial Content`，读取 1024 字节，`Content-Range: bytes 0-1023/454416193`。
+- 当前电脑 `deer-wg` 健康且与 `38.34.191.104:51820` 有最新握手；`deer-node` 健康接口返回成功。ModelRoute、Sub2API、Redis、MySQL 容器状态保持运行。
+
+### Notes
+- `/opt/deer-screening-room/app.node-provisioning-20260803-1`：当前 104 小鹿发布目录；`/opt/deer-screening-room/backups/node-provisioning-before-20260803`：部署前备份目录。
+- `deploy/media-node/compose.yaml`、`deploy/media-node/compose.ugreen.yaml`、`internal/provisioning/provisioning.go`：健康检查、地址规范化和安装包 Compose 模板。
+- 当前电脑旧节点容器与空项目网络已删除；旧绑定 WireGuard 配置目录仍作为本地忽略的回滚副本保留，未与新 `deer_wireguard-data` 卷混用。原始媒体目录和 poster 缓存未删除。
+- 回滚方式：104 仅使用 `/opt/deer-screening-room/app.range-resume-20260802-2` 的 Compose 文件和备份 WireGuard/Caddy 配置恢复 Gateway/Web；当前电脑仅停止 `deer` 项目并恢复旧 media-node Compose，不使用 `-v`，不触碰其他业务容器。

@@ -68,6 +68,14 @@ const userTotal = ref(0)
 const userAllTotal = ref(0)
 const usersLoadingMore = ref(false)
 const nodes = ref<NodeInfo[]>([])
+const nodeCreateOpen = ref(false)
+const nodeName = ref('')
+const nodeProvisionBusy = ref(false)
+const nodeBundleTarget = ref<NodeInfo | null>(null)
+const nodeBundleBusy = ref(false)
+const nodeRotateBusy = ref(false)
+const nodeDeleteTarget = ref<NodeInfo | null>(null)
+const nodeDeleteBusy = ref(false)
 const codeForm = ref({ credits: 1, count: 10 })
 const resetUser = ref<Account | null>(null)
 const resetPassword = ref('')
@@ -366,6 +374,70 @@ async function rescan(node: NodeInfo) {
   void pollScan(node.id, previousScanAt, Date.now() + 15 * 60 * 1000)
 }
 
+function openNodeCreate() {
+  nodeName.value = ''
+  nodeCreateOpen.value = true
+  error.value = ''
+}
+
+async function provisionNode() {
+  nodeProvisionBusy.value = true
+  error.value = ''
+  try {
+    const body = await api<{ node: NodeInfo; bundle_url: string }>('/api/v1/admin/nodes/provision', { method: 'POST', body: JSON.stringify({ name: nodeName.value.trim() }) })
+    nodes.value = [...nodes.value, body.node]
+    nodeBundleTarget.value = body.node
+    nodeCreateOpen.value = false
+    message.value = '节点已创建，请下载一次性安装包。'
+  } catch (caught) { error.value = errorMessage(caught) } finally { nodeProvisionBusy.value = false }
+}
+
+async function downloadNodeBundle(node: NodeInfo) {
+  nodeBundleBusy.value = true
+  error.value = ''
+  try {
+    const response = await fetch(`/api/v1/admin/nodes/${node.id}/bundle`, { credentials: 'same-origin' })
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      throw new Error(body?.error?.message || '安装包下载失败')
+    }
+    const blob = await response.blob()
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `deer-${node.name}.zip`
+    link.click()
+    URL.revokeObjectURL(link.href)
+    node.bundle_downloaded = true
+    nodeBundleTarget.value = null
+    message.value = '节点安装包已下载。'
+  } catch (caught) { error.value = errorMessage(caught) } finally { nodeBundleBusy.value = false }
+}
+
+async function rotateNode(node: NodeInfo) {
+  nodeRotateBusy.value = true
+  error.value = ''
+  try {
+    await api(`/api/v1/admin/nodes/${node.id}/rotate`, { method: 'POST', body: '{}' })
+    node.bundle_downloaded = false
+    nodeBundleTarget.value = node
+    message.value = '凭据已轮换，请重新下载安装包。'
+  } catch (caught) { error.value = errorMessage(caught) } finally { nodeRotateBusy.value = false }
+}
+
+async function deleteNode() {
+  if (!nodeDeleteTarget.value) return
+  nodeDeleteBusy.value = true
+  error.value = ''
+  try {
+    await api(`/api/v1/admin/nodes/${nodeDeleteTarget.value.id}`, { method: 'DELETE' })
+    nodes.value = nodes.value.filter(item => item.id !== nodeDeleteTarget.value?.id)
+    nodeBundleTarget.value = null
+    nodeDeleteTarget.value = null
+    message.value = '节点及其目录权益已删除，源视频文件保留。'
+    await loadPublic()
+  } catch (caught) { error.value = errorMessage(caught) } finally { nodeDeleteBusy.value = false }
+}
+
 async function pollScan(nodeID: number, previousScanAt: string, deadline: number) {
   const wait = async () => new Promise<void>(resolve => { scanPollTimer = window.setTimeout(resolve, 2000) })
   while (Date.now() < deadline) {
@@ -438,7 +510,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
           <div v-if="adminTab === 'codes'" class="redeem-admin"><div class="redeem-admin-tools"><form class="admin-form" @submit.prevent="createCodes"><h2>生成兑换码</h2><label>每码鹿币<input v-model.number="codeForm.credits" type="number" min="1" required /></label><label>生成数量<input v-model.number="codeForm.count" type="number" min="1" max="1000" required /></label><button class="primary" type="submit"><Ticket :size="18" />生成并导出 TXT</button></form><form class="admin-form redeem-notice-editor" @submit.prevent="saveRedeemNotice"><h2>兑换获取说明</h2><p>这里的内容会显示在成员充值页面，可填写卡网购买、兑换和输入卡密的说明。</p><textarea v-model="redeemNoticeDraft" maxlength="2000" rows="7" placeholder="例如：请先在卡网兑换，再把得到的卡密粘贴到这里兑换鹿币。"></textarea><button class="secondary" type="submit" :disabled="redeemNoticeSaving">{{ redeemNoticeSaving ? '正在保存' : '保存说明' }}</button></form></div><section class="redeem-records"><header class="admin-section-heading"><div><span>兑换码记录</span><h2>全部兑换</h2></div><strong>{{ redeemTotal }} 条</strong></header><div class="redeem-record-toolbar"><div class="segmented-control"><button v-for="filter in ([['all','全部'],['unused','未使用'],['used','已使用']] as const)" :key="filter[0]" :class="{ active: redeemStatus === filter[0] }" type="button" @click="selectRedeemStatus(filter[0])">{{ filter[1] }} {{ redeemCounts[filter[0]] }}</button></div><form class="admin-code-search" @submit.prevent="submitRedeemSearch"><Search :size="18" /><input v-model="redeemSearch" aria-label="搜索完整卡密或使用者邮箱" placeholder="搜索完整卡密或使用者邮箱" /><button class="secondary" type="submit">搜索</button></form></div><div class="admin-table redeem-table"><div class="table-row redeem-code-row head"><span>编号</span><span>面值</span><span>状态</span><span>使用者</span><span>使用时间</span><span>创建时间</span></div><div v-for="code in redeemCodes" :key="code.id" class="table-row redeem-code-row"><strong>#{{ code.id }}</strong><span>{{ code.credits }} 鹿币</span><span><em :class="code.used ? 'used' : 'unused'">{{ code.used ? '已使用' : '未使用' }}</em></span><span>{{ code.redeemed_by_email || '—' }}</span><span>{{ code.redeemed_at ? formatDate(code.redeemed_at) : '—' }}</span><span>{{ formatDate(code.created_at) }}</span></div><p v-if="!redeemCodes.length" class="table-empty">没有符合条件的兑换码</p></div><div v-if="redeemCodes.length < redeemTotal" class="load-more-row"><button class="secondary" type="button" :disabled="redeemCodesLoadingMore" @click="loadMoreRedeemCodes"><RefreshCw v-if="redeemCodesLoadingMore" class="spin" :size="17" />{{ redeemCodesLoadingMore ? '正在加载' : '加载更多兑换码' }}</button></div></section></div>
           
           <template v-else-if="adminTab === 'users'"><div class="admin-user-heading"><div><span>成员管理</span><h2>用户账号</h2></div><strong><Users :size="17" />共 {{ userAllTotal }} 个账号</strong></div><form class="admin-user-toolbar" @submit.prevent="submitUserSearch"><Search :size="18" /><input v-model="userSearch" aria-label="搜索用户邮箱" placeholder="搜索用户邮箱" /><button class="secondary" type="submit">搜索</button></form><div class="admin-table"><div class="table-row user-admin head"><span>用户</span><span>鹿币</span><span>操作</span></div><div v-for="user in users" :key="user.id" class="table-row user-admin"><span>{{ user.email }}<small>{{ user.is_admin ? '管理员' : user.enabled ? '正常' : '已停用' }}</small></span><strong>{{ user.balance }}</strong><div class="row-actions"><button class="icon-button" type="button" title="增加鹿币" aria-label="增加鹿币" @click="openCreditAdjustment(user, 1)"><Plus :size="16" /></button><button class="icon-button" type="button" title="扣减鹿币" aria-label="扣减鹿币" @click="openCreditAdjustment(user, -1)"><Minus :size="16" /></button><button class="secondary" :disabled="user.id === account?.id" @click="toggleUser(user)">{{ user.enabled ? '停用' : '启用' }}</button><button class="icon-button" type="button" title="重置密码" aria-label="重置密码" @click="resetUser = user"><KeyRound :size="16" /></button></div></div></div><div v-if="users.length < userTotal" class="load-more-row"><button class="secondary" type="button" :disabled="usersLoadingMore" @click="loadMoreUsers"><RefreshCw v-if="usersLoadingMore" class="spin" :size="17" />{{ usersLoadingMore ? '正在加载' : '加载更多用户' }}</button></div></template>
-          <div v-else-if="adminTab === 'nodes'" class="node-list"><article v-for="node in nodes" :key="node.id"><div><Server :size="22" /><span><strong>{{ node.name }}</strong><small>{{ node.online ? '在线' : '离线' }} · {{ scanStatus(node) }} · {{ formatDate(node.last_seen_at) }}</small><small v-if="node.scan_error" class="bad">{{ node.scan_error }}</small></span></div><dl><div><dt>总容量</dt><dd>{{ formatBytes(node.total_bytes) }}</dd></div><div><dt>可用容量</dt><dd>{{ formatBytes(node.available_bytes) }}</dd></div></dl><button class="secondary" :disabled="!node.online || node.scan_status === 'scanning'" @click="rescan(node)"><RefreshCw :size="17" />重新扫描</button></article></div>
+          <div v-else-if="adminTab === 'nodes'" class="nodes-admin"><header class="admin-section-heading"><div><span>媒体节点</span><h2>节点部署</h2></div><button class="primary" type="button" @click="openNodeCreate"><Plus :size="17" />创建节点</button></header><p class="node-deployment-note">每个节点都有独立身份。导出安装包后只需在 Docker 面板选择一次视频目录；删除节点会清理目录索引、视频权益和播放会话，源视频文件保留。</p><div class="node-list"><article v-for="node in nodes" :key="node.id"><div class="node-heading"><Server :size="22" /><span><strong>{{ node.name }}</strong><small>{{ node.online ? '在线' : '离线' }} · {{ scanStatus(node) }} · {{ formatDate(node.last_seen_at) }}</small><small v-if="node.wireguard_address">WireGuard {{ node.wireguard_address }}</small><small v-if="node.scan_error" class="bad">{{ node.scan_error }}</small></span></div><dl><div><dt>总容量</dt><dd>{{ formatBytes(node.total_bytes) }}</dd></div><div><dt>可用容量</dt><dd>{{ formatBytes(node.available_bytes) }}</dd></div></dl><div class="node-actions"><button v-if="node.provisioned && !node.bundle_downloaded && !node.revoked" class="secondary" type="button" :disabled="nodeBundleBusy" @click="downloadNodeBundle(node)"><ArrowDown :size="16" />下载安装包</button><button v-if="node.provisioned && !node.revoked" class="secondary" type="button" :disabled="nodeRotateBusy" @click="rotateNode(node)"><RefreshCw :size="16" />轮换凭据</button><button class="secondary" type="button" :disabled="!node.online || node.scan_status === 'scanning'" @click="rescan(node)"><RefreshCw :size="16" />重新扫描</button><button class="danger-button" type="button" @click="nodeDeleteTarget = node">删除节点</button></div></article><p v-if="!nodes.length" class="table-empty">还没有注册节点</p></div></div>
         </section>
       </main>
 
@@ -447,7 +519,10 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
       <AppModal v-if="selectedVideo" :title="selectedVideo.title" wide @close="selectedVideo = null"><div class="video-dialog"><div class="player-frame"><img v-if="selectedVideo.poster_url" :src="selectedVideo.poster_url" :alt="selectedVideo.title" /><div v-else class="poster-fallback"><Film :size="42" /></div></div><div class="video-dialog-copy"><span>{{ selectedVideo.studio_name }}</span><h3>{{ selectedVideo.title }}</h3><p>{{ formatBytes(selectedVideo.size_bytes) }} · {{ selectedVideo.width }}×{{ selectedVideo.height }} · {{ selectedVideo.video_codec.toUpperCase() }}</p><div v-if="!selectedVideo.available" class="inline-alert"><AlertCircle :size="18" />媒体节点暂时不可用</div><div v-else-if="selectedVideo.can_play" class="unlock-actions"><button class="primary" :disabled="playerBusy" @click="startPlayback"><Play :size="19" />{{ playerBusy ? '正在准备' : '播放' }}</button><button v-if="!selectedVideo.unlocked" class="secondary" @click="unlockVideo"><Coins :size="19" />{{ commerce.video_price }} 鹿币永久解锁</button></div><div v-else class="unlock-actions"><button class="primary" @click="unlockVideo"><Coins :size="19" />{{ commerce.video_price }} 鹿币永久解锁</button></div></div></div></AppModal>
     </template>
 
-      <AppModal v-if="authOpen" :title="authMode === 'login' ? '欢迎回来' : '加入放映室'" @close="authOpen = false"><form class="auth-form" @submit.prevent="submitAuth"><BrandLogo /><p>{{ authMode === 'login' ? '小鹿等你，继续上次的放映。' : '注册后可兑换鹿币、解锁作品。' }}</p><label>邮箱<input v-model="authEmail" type="email" autocomplete="email" required /></label><label>密码<input v-model="authPassword" type="password" minlength="8" maxlength="64" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" required /></label><label v-if="authCaptchaRequired" class="captcha-field">验证码<div class="captcha-entry"><input v-model="captchaAnswer" maxlength="5" autocomplete="off" required aria-label="验证码" /><button class="captcha-image" type="button" title="刷新验证码" aria-label="刷新验证码" @click="loadCaptcha"><img v-if="captchaImage" :src="captchaImage" alt="验证码图片" /><RefreshCw v-else :size="19" /></button></div></label><button class="primary" type="submit" :disabled="authBusy || (authCaptchaRequired && !captchaID)">{{ authBusy ? '请稍候' : authMode === 'login' ? '登录' : '注册' }}</button><button class="text-button" type="button" @click="switchAuthMode">{{ authMode === 'login' ? '没有账号？注册' : '已有账号？登录' }}</button></form></AppModal>
+    <AppModal v-if="nodeCreateOpen" title="创建媒体节点" @close="nodeCreateOpen = false"><form class="admin-form" @submit.prevent="provisionNode"><p>创建后会自动分配未使用的 WireGuard 地址，并生成一次性 Docker 安装包。</p><label>节点名称<input v-model="nodeName" pattern="[a-z0-9][a-z0-9._-]{1,62}[a-z0-9]" minlength="3" maxlength="64" placeholder="例如：windows-media" required /></label><button class="primary" type="submit" :disabled="nodeProvisionBusy"><Plus :size="17" />{{ nodeProvisionBusy ? '正在创建' : '创建节点' }}</button></form></AppModal>
+    <AppModal v-if="nodeBundleTarget" title="节点安装包" @close="nodeBundleTarget = null"><div class="node-bundle-modal"><CheckCircle2 :size="28" class="good" /><h3>{{ nodeBundleTarget.name }} 已准备好</h3><p>安装包只允许成功下载一次。导入 Docker 项目后，选择一次视频共享目录并启动即可。</p><button class="primary" type="button" :disabled="nodeBundleBusy" @click="downloadNodeBundle(nodeBundleTarget)"><ArrowDown :size="17" />{{ nodeBundleBusy ? '正在下载' : '下载一次性安装包' }}</button></div></AppModal>
+    <AppModal v-if="nodeDeleteTarget" title="删除节点" @close="nodeDeleteTarget = null"><div class="node-bundle-modal"><AlertCircle :size="28" class="bad" /><h3>确定删除 {{ nodeDeleteTarget.name }}？</h3><p>节点 Peer、凭据、目录索引、视频权益和播放会话都会删除。NAS 或电脑上的原始视频文件保留，旧安装包立即失效。</p><button class="danger-button danger-wide" type="button" :disabled="nodeDeleteBusy" @click="deleteNode">{{ nodeDeleteBusy ? '正在删除' : '确认删除节点' }}</button></div></AppModal>
+    <AppModal v-if="authOpen" :title="authMode === 'login' ? '欢迎回来' : '加入放映室'" @close="authOpen = false"><form class="auth-form" @submit.prevent="submitAuth"><BrandLogo /><p>{{ authMode === 'login' ? '小鹿等你，继续上次的放映。' : '注册后可兑换鹿币、解锁作品。' }}</p><label>邮箱<input v-model="authEmail" type="email" autocomplete="email" required /></label><label>密码<input v-model="authPassword" type="password" minlength="8" maxlength="64" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" required /></label><label v-if="authCaptchaRequired" class="captcha-field">验证码<div class="captcha-entry"><input v-model="captchaAnswer" maxlength="5" autocomplete="off" required aria-label="验证码" /><button class="captcha-image" type="button" title="刷新验证码" aria-label="刷新验证码" @click="loadCaptcha"><img v-if="captchaImage" :src="captchaImage" alt="验证码图片" /><RefreshCw v-else :size="19" /></button></div></label><button class="primary" type="submit" :disabled="authBusy || (authCaptchaRequired && !captchaID)">{{ authBusy ? '请稍候' : authMode === 'login' ? '登录' : '注册' }}</button><button class="text-button" type="button" @click="switchAuthMode">{{ authMode === 'login' ? '没有账号？注册' : '已有账号？登录' }}</button></form></AppModal>
     <AppModal v-if="resetUser" title="重置用户密码" @close="resetUser = null; resetPassword = ''"><form class="auth-form" @submit.prevent="submitPasswordReset"><p>{{ resetUser.email }}</p><label>新密码<input v-model="resetPassword" type="password" minlength="8" maxlength="64" required /></label><button class="primary" type="submit"><KeyRound :size="17" />确认重置</button></form></AppModal>
     <AppModal v-if="creditTarget" :title="creditDirection > 0 ? '增加鹿币' : '扣减鹿币'" @close="creditTarget = null"><form class="admin-form" @submit.prevent="submitCreditAdjustment"><p>{{ creditTarget.email }}</p><div class="adjustment-summary"><div><span>当前余额</span><strong>{{ creditTarget.balance }}</strong></div><component :is="creditDirection > 0 ? ArrowUp : ArrowDown" :size="20" /><div><span>调整后</span><strong :class="creditBalanceAfter < 0 ? 'bad' : ''">{{ creditBalanceAfter }}</strong></div></div><label>数量<input v-model.number="creditAmount" type="number" min="1" max="100000" required /></label><label>备注（选填）<input v-model="creditReason" maxlength="200" /></label><button class="primary" type="submit" :disabled="creditBusy || creditBalanceAfter < 0">{{ creditBusy ? '正在提交' : '确认调整' }}</button></form></AppModal>
   </div>

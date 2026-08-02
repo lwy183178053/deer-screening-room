@@ -34,6 +34,27 @@ services:
       net.ipv4.conf.all.src_valid_mark: 1
     networks: [backend, edge]
 
+  wireguard-provisioner:
+    image: deerroom-app:${DEER_VERSION:-latest}
+    command: ["/app/wireguard-provisioner"]
+    restart: unless-stopped
+    network_mode: service:wireguard
+    environment:
+      DEER_WG_CONFIG: /config/wg_confs/wg0.conf
+      DEER_WG_INTERFACE: wg0
+      DEER_WG_PROVISIONER_TOKEN: ${DEER_WG_PROVISIONER_TOKEN}
+    volumes:
+      - ./wireguard:/config
+    depends_on:
+      wireguard:
+        condition: service_started
+    read_only: true
+    tmpfs: [/tmp]
+    cap_add: [NET_ADMIN]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 64m
+
   gateway:
     build:
       context: ../..
@@ -48,13 +69,21 @@ services:
       DEER_COOKIE_SECURE: "true"
       DEER_BOOTSTRAP_ADMIN: ${DEER_BOOTSTRAP_ADMIN}
       DEER_BOOTSTRAP_PASSWORD: ${DEER_BOOTSTRAP_PASSWORD}
-      DEER_NODE_CREDENTIALS: ${DEER_NODE_CREDENTIALS}
+      DEER_NODE_SECRETS_KEY: ${DEER_NODE_SECRETS_KEY}
+      DEER_WG_PROVISIONER_URL: http://127.0.0.1:9191
+      DEER_WG_PROVISIONER_TOKEN: ${DEER_WG_PROVISIONER_TOKEN}
+      DEER_CLOUD_WIREGUARD_PUBLIC_KEY: ${DEER_CLOUD_WIREGUARD_PUBLIC_KEY}
+      DEER_CLOUD_ENDPOINT: ${DEER_CLOUD_ENDPOINT:-38.34.191.104:51820}
+      DEER_NODE_IMAGE: ${DEER_NODE_IMAGE:-ghcr.io/lwy183178053/deer-screening-room}
+      DEER_NODE_VERSION: ${DEER_NODE_VERSION:-latest}
       DEER_PASSWORD_HASH_CONCURRENCY: ${DEER_PASSWORD_HASH_CONCURRENCY:-4}
       DEER_USER_STREAM_REQUESTS_PER_MINUTE: ${DEER_USER_STREAM_REQUESTS_PER_MINUTE:-120}
     depends_on:
       postgres:
         condition: service_healthy
       wireguard:
+        condition: service_started
+      wireguard-provisioner:
         condition: service_started
     read_only: true
     tmpfs: [/tmp]

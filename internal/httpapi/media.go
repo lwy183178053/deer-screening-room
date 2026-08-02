@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"deerroom/internal/media"
+	"deerroom/internal/provisioning"
 	"deerroom/internal/store"
 )
 
@@ -161,18 +163,27 @@ func (a *API) streamPlayback(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) nodeAuthorized(r *http.Request, nodeName, baseURL string) bool {
 	received := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if credential, ok := a.nodeCredentials[nodeName]; len(a.nodeCredentials) > 0 {
-		return ok && baseURL == credential.BaseURL && constantToken(received, credential.APIToken)
+	if node, ok := a.provisionedCredential(nodeName); ok {
+		apiToken, err := provisioning.Open(a.nodeSecretsKey, node.APITokenSealed)
+		return err == nil && !node.Revoked && baseURL == node.BaseURL && constantToken(received, apiToken)
 	}
-	return constantToken(received, a.nodeAPIToken)
+	return false
 }
 
 func (a *API) relayTokenFor(nodeName string) (string, bool) {
-	if len(a.nodeCredentials) > 0 {
-		credential, ok := a.nodeCredentials[nodeName]
-		return credential.RelayToken, ok && credential.RelayToken != ""
+	if node, ok := a.provisionedCredential(nodeName); ok && !node.Revoked {
+		relayToken, err := provisioning.Open(a.nodeSecretsKey, node.RelayTokenSealed)
+		return relayToken, err == nil && relayToken != ""
 	}
-	return a.relayToken, a.relayToken != ""
+	return "", false
+}
+
+func (a *API) provisionedCredential(nodeName string) (store.ProvisionedNode, bool) {
+	if a.store == nil || len(a.nodeSecretsKey) != 32 {
+		return store.ProvisionedNode{}, false
+	}
+	node, err := a.store.ProvisionedNodeByName(context.Background(), nodeName)
+	return node, err == nil
 }
 
 func constantToken(received, expected string) bool {

@@ -23,6 +23,10 @@ func (a *API) registerCatalogRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/admin/users/{id}/reset-password", a.resetAdminPassword)
 	mux.HandleFunc("POST /api/v1/admin/users/{id}/credits", a.adjustAdminCredits)
 	mux.HandleFunc("GET /api/v1/admin/nodes", a.adminNodes)
+	mux.HandleFunc("POST /api/v1/admin/nodes/provision", a.provisionNode)
+	mux.HandleFunc("GET /api/v1/admin/nodes/{id}/bundle", a.downloadNodeBundle)
+	mux.HandleFunc("POST /api/v1/admin/nodes/{id}/rotate", a.rotateNode)
+	mux.HandleFunc("DELETE /api/v1/admin/nodes/{id}", a.revokeNode)
 	mux.HandleFunc("POST /api/v1/admin/nodes/{id}/rescan", a.adminRescan)
 }
 
