@@ -1,0 +1,4 @@
+services:
+  media-node:
+    build: null
+    image: ghcr.io/lwy183178053/deer-screening-room:${DEER_VERSION:-latest}

@@ -43,6 +43,26 @@ Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Wind
 
 ## 3. Start services
 
+### Use the GHCR image on a NAS
+
+Intel N100 is `linux/amd64`, so the media-node image published by GitHub Actions can be pulled directly on the NAS. The repository publishes `ghcr.io/lwy183178053/deer-screening-room` when a `v*` tag is pushed; the `latest` tag is updated at the same time.
+
+For a private GHCR package, create a GitHub token with `read:packages` and sign in through the NAS Docker registry page or its terminal. Keep the token in the NAS credential store rather than `.env`:
+
+```bash
+echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u lwy183178053 --password-stdin
+```
+
+Set the selected image tag in `deploy/media-node/.env`, then import both Compose files in the NAS Docker project. The registry overlay removes the local `build` step and makes the project pull the image:
+
+```bash
+DEER_VERSION=v0.1.0
+docker compose --env-file .env -f compose.yaml -f compose.registry.yaml pull media-node
+docker compose --env-file .env -f compose.yaml -f compose.registry.yaml up -d --no-build
+```
+
+The image contains both `/app/media-node` and `/app/gateway`; this project starts only `/app/media-node`. WireGuard, the media bind mount, node credentials and poster cache remain NAS-side runtime configuration.
+
 独占 `80/443` 的服务器先启动云端：
 
 ```bash
