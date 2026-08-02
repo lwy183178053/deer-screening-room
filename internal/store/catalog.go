@@ -153,61 +153,40 @@ func (s *Postgres) VideoByID(ctx context.Context, userID, videoID int64, now tim
 	return item, err
 }
 
-func (s *Postgres) CreatePlayback(ctx context.Context, id string, userID, videoID int64, expires, now time.Time) ([]PlaybackTarget, error) {
+func (s *Postgres) CreatePlayback(ctx context.Context, id string, userID, videoID int64, expires, now time.Time) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer tx.Rollback(ctx)
 	var lockedUserID int64
 	if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(&lockedUserID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+			return ErrNotFound
 		}
-		return nil, err
+		return err
 	}
-	rows, err := tx.Query(ctx, `SELECT ps.id,n.name,n.base_url FROM playback_sessions ps JOIN videos v ON v.id=ps.video_id JOIN media_nodes n ON n.id=v.node_id WHERE ps.user_id=$1 AND ps.revoked_at IS NULL`, userID)
-	if err != nil {
-		return nil, err
-	}
-	revoked := []PlaybackTarget{}
-	for rows.Next() {
-		var target PlaybackTarget
-		if err := rows.Scan(&target.SessionID, &target.NodeName, &target.NodeURL); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		revoked = append(revoked, target)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	rows.Close()
 	var canPlay, available bool
 	err = tx.QueryRow(ctx, `SELECT e.user_id IS NOT NULL,v.published AND v.available AND v.compatibility='ready' AND n.online AND COALESCE(n.last_seen_at>($3::timestamptz - interval '90 seconds'),false) FROM videos v JOIN media_nodes n ON n.id=v.node_id LEFT JOIN video_entitlements e ON e.video_id=v.id AND e.user_id=$1 WHERE v.id=$2`, userID, videoID, now).Scan(&canPlay, &available)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
+		return ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !available {
-		return nil, ErrUnavailable
+		return ErrUnavailable
 	}
 	if !canPlay {
-		return nil, ErrForbidden
+		return ErrForbidden
 	}
 	if _, err := tx.Exec(ctx, `UPDATE playback_sessions SET revoked_at=$2 WHERE user_id=$1 AND revoked_at IS NULL`, userID, now); err != nil {
-		return nil, err
+		return err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO playback_sessions(id,user_id,video_id,expires_at,created_at) VALUES($1,$2,$3,$4,$5)`, id, userID, videoID, expires, now); err != nil {
-		return nil, err
+		return err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return revoked, nil
+	return tx.Commit(ctx)
 }
 
 func (s *Postgres) PlaybackVideo(ctx context.Context, playbackID string, userID int64, now time.Time) (Video, error) {
@@ -220,17 +199,6 @@ func (s *Postgres) PlaybackVideo(ctx context.Context, playbackID string, userID 
 		return Video{}, err
 	}
 	return s.VideoByID(ctx, userID, videoID, now)
-}
-
-func (s *Postgres) RevokePlayback(ctx context.Context, playbackID string, userID int64, now time.Time) error {
-	result, err := s.pool.Exec(ctx, `UPDATE playback_sessions SET revoked_at=$3 WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, playbackID, userID, now)
-	if err != nil {
-		return err
-	}
-	if result.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
 }
 
 func (s *Postgres) ListNodes(ctx context.Context, now time.Time) ([]Node, error) {

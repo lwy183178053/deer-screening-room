@@ -784,121 +784,23 @@
 - `progress.md`：追加生产部署和真实业务验收证据。
 - 回滚方式：104 上使用部署前的 `/etc/caddy/Caddyfile.pre-deer-screening-room-20260802-010217` 恢复并 `systemctl reload caddy`；停止云端使用 `docker compose -p deer-screening-room-cloud -f compose.yaml -f compose.host-caddy.yaml down`（不加 `-v`）；本地节点使用对应 Compose `down`，不删除媒体兼容视图或原始视频。
 
-## 2026-08-02 - Task: 实现 WebRTC 播放、TURN 隐私模式与全站移动适配
+## 2026-08-02 - Task: 回档 Range 播放并收敛管理与移动端界面
 ### What was done
-- 将视频数据面从 Gateway HTTP Relay 收敛为浏览器与媒体节点 WebRTC；Gateway 只负责权益、会话、TURN 临时凭据和 SDP 信令，节点在会话结束、替换、断线、FFmpeg 结束或 TTL 到期时清理资源。
-- 新增默认关闭的“允许节点直连”管理员开关；关闭时浏览器和节点双端强制 TURN-only，开启时允许直连并在播放页显示实际链路状态。
-- 删除旧 HTTP 播放端点、带宽令牌桶、节点连接槽位、Relay Token、播放速率设置和 Artplayer；保留账号级播放请求频率保护。
-- 新增 coturn 云端服务与固定 relay 端口范围；H.264 profile 被浏览器支持时直接复用，High 等未协商 profile 仅在会话内低延迟转码，不保存副本。
-- 视频目录固定每页 20 条；完成 320px、390px、430px 双列目录、搜索、播放页、后台表格、账户和弹窗适配。
+- 将工作区恢复到稳定的 HTTP Range 播放链路，保留 Artplayer、会话鉴权、Range/206 响应和节点回环部署，不再使用 WebRTC 播放入口。
+- 管理后台移除 P2P/节点直连选项；播放速率设置继续保留，避免影响既有 Range 播放治理。
+- 目录和已购库统一改为每页 20 条；兑换码、搜索和管理员数据的前端测试夹具同步到 20 条分页。
+- 收紧鹿币页面移动端首屏：邮箱单行省略、余额区缩短、兑换表单在 320px 以上视口内可操作。
 
 ### Testing
-- 使用临时 PostgreSQL、`TEST_DATABASE_URL`、`TEST_HTTP_DATABASE_URL` 和真实 79 个媒体目录执行 `go test ./...`、`go test -race ./...`、`go vet ./...`：通过；真实 H.264/Opus WebRTC RTP 测试通过。
-- `npm.cmd run test`：3 个测试文件、5 项测试通过；`npm.cmd run build`：通过；`npm.cmd run test:e2e`：10 项通过；`npm.cmd audit --audit-level=high`：0 个漏洞。
-- 本地、云端基础、云端宿主机 Caddy 覆盖和媒体节点四套 `docker compose config --quiet`：通过。
-- `coturn/coturn:4.6.3` 镜像版本与固定 digest 实际拉取验证通过；`git diff --check` 通过，跟踪文件与差异秘密扫描只命中示例占位符。
+- `go test ./...`：通过。
+- `npm.cmd ci`：依赖安装完成，审计无高危命中。
+- `npm.cmd run test -- --run`：2 个测试文件、4 项测试通过。
+- `npm.cmd run build`：`vue-tsc` 和 Vite 生产构建通过。
+- `npm.cmd run test:e2e`：11 项 Playwright 测试通过，包含桌面目录、手机两列、Range 播放页、管理页和鹿币移动端页面。
+- `git diff --check`：通过；源码、配置和文档检索无 P2P/WebRTC 运行引用。
 
 ### Notes
-- `.env.example`：移除旧 Relay/限速/连接变量并增加 TURN 示例。
-- `README.md`：更新 WebRTC、TURN 隐私模式、每页 20 条和本地配置说明。
-- `cmd/gateway/main.go`：加载 P2P 设置与 TURN 配置并移除旧播放限制参数。
-- `cmd/media-node/main.go`：按统一节点 API Token 配置启动媒体节点。
-- `compose.yaml`：删除旧播放变量并增加本地 coturn 服务。
-- `deploy/cloud/.env.example`：增加生产 TURN 地址、共享密钥和 relay 端口示例。
-- `deploy/cloud/compose.yaml`：增加固定 digest 的 host-network coturn 并向 Gateway 注入 TURN 配置。
-- `deploy/media-node/.env.example`：删除 Relay Token 与 64 路连接变量。
-- `deploy/media-node/.env.node-2.example`：同步第二节点的精简运行变量。
-- `deploy/media-node/compose.yaml`：删除旧 Relay 与连接槽位环境变量。
-- `docs/api.md`：记录 P2P 会话、offer、close、管理员开关和已删除接口。
-- `docs/architecture.md`：更新 WebRTC 数据面、TURN 隐私边界、profile 处理和资源清理架构。
-- `docs/deployment-fnos.md`：更新 coturn 端口、部署、验收与回滚命令。
-- `docs/media-library.md`：更新每页 20 条、节点接口和会话内 profile 处理。
-- `docs/operations.md`：增加 coturn、relay 流量、FFmpeg 和升级隔离监控项。
-- `docs/security.md`：记录双端 relay 强制、ICE 配置注入、TURN 内网隔离和位置隐私边界。
-- `docs/testing.md`：更新 Go、WebRTC、移动端、Compose 和生产验收矩阵。
-- `go.mod`：加入 Pion WebRTC 直接依赖并移除旧限速依赖。
-- `go.sum`：同步 Go 依赖校验和。
-- `internal/bandwidth/manager.go`：删除旧 Gateway 字节令牌桶实现。
-- `internal/config/config.go`：增加必填 TURN relay 配置并删除旧连接限制字段。
-- `internal/config/config_test.go`：覆盖缺失 TURN 与 STUN-only 配置拒绝。
-- `internal/httpapi/catalog.go`：目录和已购库分页改为每页 20 条。
-- `internal/httpapi/media.go`：实现 P2P 会话、服务端 ICE 策略、节点信令和旧会话关闭通知。
-- `internal/httpapi/media_integration_test.go`：用真实数据库覆盖会话替换、offer/answer、关闭和旧接口 404。
-- `internal/httpapi/node_credentials_test.go`：同步统一节点 API Token 凭据结构。
-- `internal/httpapi/p2p_settings.go`：新增管理员节点直连设置接口。
-- `internal/httpapi/router.go`：注册 P2P 设置并持有 TURN 与直连运行状态。
-- `internal/httpapi/settings.go`：删除旧播放速率接口。
-- `internal/httpapi/stream_guard.go`：收敛为账号级播放请求频率保护。
-- `internal/httpapi/stream_guard_test.go`：验证只限制请求频率、不限制活跃播放数量。
-- `internal/httpapi/turn_test.go`：覆盖 TURN REST 凭据与 Gateway 强制节点 ICE 策略。
-- `internal/media/node.go`：删除 HTTP 视频读取并统一节点鉴权。
-- `internal/media/scanner_test.go`：验证旧媒体端点 404 与封面 API Token 鉴权。
-- `internal/media/webrtc.go`：新增 Pion、FFmpeg、RTP、profile 选择和会话清理实现。
-- `internal/media/webrtc_test.go`：覆盖 relay-only、生命周期、错误脱敏、profile 选择和真实媒体 RTP。
-- `internal/store/catalog.go`：播放事务返回被替换会话的节点路由。
-- `internal/store/postgres_integration_test.go`：验证旧会话撤销路由与并发唯一会话。
-- `internal/store/settings.go`：保存和读取 `p2p_enabled`。
-- `internal/store/types.go`：增加被撤销播放目标类型。
-- `internal/store/migrations/003_p2p_enabled.sql`：默认关闭 P2P 并删除旧播放速率设置项。
-- `web/e2e/app.spec.ts`：覆盖 WebRTC、后台开关、每页 20 条和三档手机宽度。
-- `web/package.json`：移除 Artplayer 依赖。
-- `web/package-lock.json`：同步前端依赖锁。
-- `web/src/App.test.ts`：同步目录每页 20 条夹具。
-- `web/src/App.vue`：接入 P2P 会话、链路状态和管理员直连开关。
-- `web/src/components/VideoPlayer.vue`：使用原生 WebRTC 视频、candidate pair 状态和倍速控制。
-- `web/src/components/VideoPlayer.test.ts`：验证 relay 策略、offer/answer 和双端关闭。
-- `web/src/styles.css`：完成双列目录、搜索、播放页、后台、弹窗和链路状态响应式布局。
-- `web/src/types.ts`：增加 P2P 会话、ICE 与管理员设置类型。
-- `progress.md`：追加本轮实施、验证和回滚记录。
-- 回滚方式：在部署前使用本轮实现提交的父提交作为代码回滚点，恢复部署前云端与节点 `.env` 备份后分别重建小鹿 Gateway/Web 与媒体节点；停止新增 coturn，不加 `-v`，保留 PostgreSQL、WireGuard、封面缓存、兼容视图和原视频。新旧 Gateway 与节点协议不可混用，必须成套回滚。
-
-## 2026-08-02 - Task: 部署 WebRTC 播放并验收 TURN 隐私模式
-### What was done
-- 将功能提交 `98d4757` 部署到 104 的独立小鹿 Compose 项目，只替换 Gateway、Web 并新增 coturn；PostgreSQL、WireGuard、宿主机 Caddy 和其他业务保持原实例。
-- 生产 TURN 端点使用 104 公网地址和新生成的受限运行密钥，删除旧 Relay、字节限速和连接数量运行变量；coturn 只绑定 104，未占用同主机其他公网地址。
-- 本机只重建 `deer-screening-room-media-1` 的 media-node，继续只读使用原媒体目录；管理员直连开关最终恢复默认关闭。
-
-### Testing
-- 部署前创建代码、Compose、Caddy、生产 `.env` 和 PostgreSQL 逻辑备份；Caddy 配置校验通过且配置哈希、进程 PID 与启动时间前后不变。
-- coturn 固定镜像启动稳定、重启计数为 0，仅监听 `38.34.191.104:3478`；从本机完成 TURN REST UDP 和 TCP 双向分配测试，各发送和接收 6 条消息、丢包为 0。
-- `https://xiaolu.lwylink.xyz` 与 `/api/v1/health` 返回 `200`，旧 HTTP 播放端点返回 `404`；既有三个业务域名继续返回 `200`，既有非小鹿容器 ID 全部不变。
-- 小鹿 PostgreSQL 和 WireGuard 容器 ID 未变；本机 WireGuard 和其他容器 ID 未变，媒体节点能经 `10.77.0.1` 访问 Gateway，生产目录返回 79 个视频且节点在线。
-- 真实 Chromium 以 390px 登录生产域名：目录保持两列、搜索按钮无覆盖、播放页无横向溢出。TURN-only 时浏览器和节点选中 relay/relay candidate，视频实际解码为 2560x1440，视频与音频轨道均存在；开启直连后浏览器策略切换为 `all`，当前网络自动回落 TURN，退出后 FFmpeg 已清理并将开关恢复关闭。
-
-### Notes
-- `compose.yaml`：删除 coturn 4.6.3 不支持的参数，并限制监听与 relay 地址。
-- `deploy/cloud/compose.yaml`：同步生产 coturn 参数和单公网 IP 绑定。
-- `docs/deployment-fnos.md`：补充多公网 IP 主机的 TURN 单地址绑定要求。
-- `progress.md`：追加生产部署、隔离验证、真实播放证据和回滚点。
-- 回滚点：云端备份位于 `/opt/deer-screening-room/backups/webrtc-20260802-033338`，旧代码目录为 `/opt/deer-screening-room/app.pre-webrtc-20260802-033338`；先停止小鹿 coturn，再原子恢复旧代码目录并仅重建旧 Gateway/Web，不重建 PostgreSQL 或 WireGuard。恢复数据库时使用备份内 `postgres.dump`。本机运行配置备份位于被忽略的 `deploy/media-node/wireguard/runtime-backups/`；代码回到 `c984c94` 后只重建 media-node，不操作 WireGuard、其他容器或原视频。
-
-## 2026-08-02 - Task: 提速 WebRTC 播放并升级播放器
-### What was done
-- 接入 Media Chrome 4.19.2，为 WebRTC MediaStream 提供移动端友好的播放、音量、进度、倍速和全屏控件。
-- 增加 `DEER_STUN_URLS`；管理员关闭直连时仍只使用 TURN，开启直连时才同时下发 STUN 并允许 all 策略。
-- 将浏览器 ICE 等待上限降为 1.5 秒；节点在 PeerConnection 建立后启动 FFmpeg，减少协商前丢帧和首帧等待。
-- 更新本地/云端配置示例、架构、安全、运维和依赖说明。
-### Testing
-- `go test ./...`、`go vet ./...`、`npm.cmd run build`、`npm.cmd run test`、`git diff --check`：通过。
-- 未执行真实公网部署、真实手机播放和 Playwright 本轮回归；生产验收仍需在部署后分别检查 TURN-only、STUN/直连候选和首帧时间。
-### Notes
-- `internal/config/config.go`、`internal/config/config_test.go`：新增 STUN URL 配置与格式校验。
-- `internal/httpapi/router.go`、`internal/httpapi/media.go`、`internal/httpapi/turn_test.go`、`cmd/gateway/main.go`：按管理员策略生成 STUN/TURN ICE 配置。
-- `internal/media/webrtc.go`：延后 FFmpeg 启动至 PeerConnection connected。
-- `web/package.json`、`web/package-lock.json`、`web/src/components/VideoPlayer.vue`、`web/src/components/VideoPlayer.test.ts`、`web/src/styles.css`：接入 Media Chrome 与快速 ICE 播放流程。
-- `.env.example`、`compose.yaml`、`deploy/cloud/.env.example`、`deploy/cloud/compose.yaml`、`README.md`、`docs/architecture.md`、`docs/security.md`、`docs/operations.md`、`docs/credits.md`：同步 STUN、播放器和隐私边界说明。
-- 回滚方式：回到本轮父提交并恢复对应运行配置；仅重建小鹿 Gateway/Web/媒体节点，coturn 可单独停止，不删除 PostgreSQL、WireGuard、媒体目录或其他业务。
-
-## 2026-08-02 - Task: 部署播放提速与 Media Chrome 更新
-### What was done
-- 以提交 `44c5d23` 归档上传到 104，仅重建 `deer-screening-room-cloud` 的 Gateway/Web 和本机 `deer-screening-room-media-1` 的 media-node。
-- 在 104 运行配置中追加 STUN 地址，保留管理员 P2P 默认关闭和所有既有秘密；PostgreSQL、WireGuard、coturn、宿主机 Caddy 以及其他业务 Compose 未重建。
-- 公网域名、健康接口、静态资源和回环健康检查均恢复正常；媒体节点新镜像启动并继续使用原只读媒体目录。
-### Testing
-- 104：`https://xiaolu.lwylink.xyz/` 和 `/api/v1/health` 返回 200；`127.0.0.1:28200/api/v1/health` 返回 200。
-- 104：`80/443` 由宿主机 Caddy，`28200` 仅回环，`38.34.191.104:3478` 的 UDP/TCP 和 `51820/udp` 监听正常；coturn 日志无启动错误。
-- 104：ModelRoute、Sub2API 及其数据库/Redis 容器保持运行；小鹿 PostgreSQL、WireGuard、coturn 未被重建。线上真实登录/手机播放和直连 candidate pair 仍需测试账号与实际网络触发，当前未伪报为已完成。
-### Notes
-- `docs/deployment-fnos.md`：补充 STUN 运行配置说明。
-- `progress.md`：追加本次生产部署、隔离证据和回滚点。
-- 回滚点：恢复 `/opt/deer-screening-room/backups/webrtc-44c5d23-20260802-084746` 中的 `.env`、Caddy 和容器记录，代码回到 `98d4757`；只重建小鹿 Gateway/Web/媒体节点，停止 coturn 时不删除卷，不操作其他业务。
+- `internal/httpapi/catalog.go`、`web/src/App.vue`、`web/src/App.test.ts`、`web/e2e/app.spec.ts`：统一 20 条分页并更新回归夹具。
+- `web/src/App.vue`、`web/src/styles.css`：移除 P2P 管理入口，优化账户邮箱、余额和兑换表单的移动端布局。
+- `web/src/types.ts`、`docs/api.md`、`docs/testing.md`：同步类型、API 分页和测试说明。
+- 回滚方式：恢复本轮涉及文件到当前提交；播放回档点保持 `c984c94`，生产回滚点为现有部署前备份和对应 Compose 项目，不操作其他业务容器。

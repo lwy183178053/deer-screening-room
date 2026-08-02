@@ -56,4 +56,5 @@ describe('App', () => {
     app.unmount()
     container.remove()
   })
+
 })

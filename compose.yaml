@@ -16,31 +16,6 @@ services:
       retries: 20
     networks: [backend]
 
-  coturn:
-    image: coturn/coturn:4.6.3@sha256:71c3c990283385567f11794ee692e3a47b66fd9b0bb39e42afbe776e331dd888
-    restart: unless-stopped
-    environment:
-      DEER_TURN_SECRET: ${DEER_TURN_SECRET:-local-turn-secret-change-me}
-      DEER_TURN_EXTERNAL_IP: ${DEER_TURN_EXTERNAL_IP}
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - >-
-        exec turnserver --no-cli --no-tls --no-dtls --fingerprint --use-auth-secret
-        --static-auth-secret="$${DEER_TURN_SECRET}" --realm=deerroom.local
-        --external-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-ip="$${DEER_TURN_EXTERNAL_IP}"
-        --relay-ip="$${DEER_TURN_EXTERNAL_IP}" --listening-port=3478
-        --min-port=49160 --max-port=49200 --no-multicast-peers
-        --log-file=stdout
-    ports:
-      - "3478:3478/tcp"
-      - "3478:3478/udp"
-      - "49160-49200:49160-49200/udp"
-    read_only: true
-    tmpfs: [/tmp, /var/run]
-    security_opt: [no-new-privileges:true]
-    pids_limit: 64
-    mem_limit: 128m
-
   gateway:
     build: .
     image: deerroom-app:dev
@@ -53,12 +28,11 @@ services:
       DEER_BOOTSTRAP_ADMIN: ${DEER_BOOTSTRAP_ADMIN:-admin@example.com}
       DEER_BOOTSTRAP_PASSWORD: ${DEER_BOOTSTRAP_PASSWORD:-deerroom-admin-password}
       DEER_NODE_API_TOKEN: ${DEER_NODE_API_TOKEN:-local-node-api-token-change-me}
+      DEER_RELAY_TOKEN: ${DEER_RELAY_TOKEN:-local-relay-token-change-me}
+      DEER_USER_STREAM_BPS: ${DEER_USER_STREAM_BPS:-10000000}
       DEER_PASSWORD_HASH_CONCURRENCY: ${DEER_PASSWORD_HASH_CONCURRENCY:-4}
+      DEER_USER_MAX_STREAMS: ${DEER_USER_MAX_STREAMS:-4}
       DEER_USER_STREAM_REQUESTS_PER_MINUTE: ${DEER_USER_STREAM_REQUESTS_PER_MINUTE:-120}
-      DEER_TURN_URLS: ${DEER_TURN_URLS:-turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp}
-      DEER_STUN_URLS: ${DEER_STUN_URLS:-stun:localhost:3478}
-      DEER_TURN_SECRET: ${DEER_TURN_SECRET:-local-turn-secret-change-me}
-      DEER_TURN_TTL: ${DEER_TURN_TTL:-2h}
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,17 +59,17 @@ services:
       DEER_NODE_NAME: ${DEER_NODE_NAME:-local-media}
       DEER_NODE_PUBLIC_URL: ${DEER_NODE_PUBLIC_URL:-http://media-node:8081}
       DEER_NODE_API_TOKEN: ${DEER_NODE_API_TOKEN:-local-node-api-token-change-me}
+      DEER_RELAY_TOKEN: ${DEER_RELAY_TOKEN:-local-relay-token-change-me}
       DEER_MEDIA_ROOT: /media
       DEER_POSTER_ROOT: /app/posters
       DEER_SCAN_INTERVAL: 10m
+      DEER_NODE_MAX_STREAMS: ${DEER_NODE_MAX_STREAMS:-64}
     volumes:
       - ${DEER_MEDIA_HOST_PATH:-E:/BaiduNetdiskDownload}:/media:ro
       - poster-data:/app/posters
     depends_on:
       gateway:
         condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/api/v1/health"]
       interval: 10s

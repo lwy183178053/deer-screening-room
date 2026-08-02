@@ -9,21 +9,24 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
 type NodeConfig struct {
-	Name, PublicURL, GatewayURL, NodeAPIToken string
-	MediaRoot, PosterRoot                     string
-	HTTPClient                                *http.Client
+	Name, PublicURL, GatewayURL, NodeAPIToken, RelayToken string
+	MediaRoot, PosterRoot                                 string
+	HTTPClient                                            *http.Client
+	MaxStreams                                            int
 }
 
 type Node struct {
 	config             NodeConfig
 	scanner            *Scanner
-	webrtc             *WebRTCSessions
+	streamSlots        chan struct{}
 	stateMu            sync.RWMutex
 	scanning           bool
 	lastScanAt         time.Time
@@ -32,7 +35,7 @@ type Node struct {
 }
 
 func NewNode(config NodeConfig) (*Node, error) {
-	if config.Name == "" || config.PublicURL == "" || config.GatewayURL == "" || config.NodeAPIToken == "" {
+	if config.Name == "" || config.PublicURL == "" || config.GatewayURL == "" || config.NodeAPIToken == "" || config.RelayToken == "" {
 		return nil, errors.New("node configuration is incomplete")
 	}
 	if config.HTTPClient == nil {
@@ -45,11 +48,14 @@ func NewNode(config NodeConfig) (*Node, error) {
 		transport.ResponseHeaderTimeout = 15 * time.Second
 		config.HTTPClient = &http.Client{Transport: transport, Timeout: 5 * time.Minute}
 	}
+	if config.MaxStreams < 1 {
+		config.MaxStreams = 64
+	}
 	scanner, err := NewScanner(config.MediaRoot, config.PosterRoot)
 	if err != nil {
 		return nil, err
 	}
-	return &Node{config: config, scanner: scanner, webrtc: NewWebRTCSessions(scanner)}, nil
+	return &Node{config: config, scanner: scanner, streamSlots: make(chan struct{}, config.MaxStreams)}, nil
 }
 
 func (n *Node) Handler() http.Handler {
@@ -57,11 +63,11 @@ func (n *Node) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "service": "media-node"})
 	})
+	mux.HandleFunc("GET /internal/media/{key}", n.serveMedia)
+	mux.HandleFunc("HEAD /internal/media/{key}", n.serveMedia)
 	mux.HandleFunc("GET /internal/posters/{key}", n.servePoster)
 	mux.HandleFunc("HEAD /internal/posters/{key}", n.servePoster)
 	mux.HandleFunc("POST /internal/rescan", n.rescan)
-	mux.HandleFunc("POST /internal/webrtc/offer", n.webrtcOffer)
-	mux.HandleFunc("POST /internal/webrtc/close", n.webrtcClose)
 	return mux
 }
 
@@ -105,7 +111,7 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 
 func (n *Node) rescan(w http.ResponseWriter, r *http.Request) {
 	if !n.authorized(r) {
-		writeError(w, 401, "node authentication required")
+		writeError(w, 401, "relay authentication required")
 		return
 	}
 	if !n.beginScan() {
@@ -224,9 +230,50 @@ func (n *Node) postGateway(ctx context.Context, path string, payload any) error 
 	return nil
 }
 
+func (n *Node) serveMedia(w http.ResponseWriter, r *http.Request) {
+	if !n.authorized(r) {
+		writeError(w, 401, "relay authentication required")
+		return
+	}
+	path, ok := n.scanner.ResolveMedia(r.PathValue("key"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method == http.MethodGet {
+		select {
+		case n.streamSlots <- struct{}{}:
+			defer func() { <-n.streamSlots }()
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeError(w, http.StatusServiceUnavailable, "media node is busy")
+			return
+		}
+	}
+	file, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "media unavailable", 500)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.Error(w, "media unavailable", 500)
+		return
+	}
+	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("Content-Type", mediaType(filepath.Ext(path)))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), file)
+}
+
 func (n *Node) servePoster(w http.ResponseWriter, r *http.Request) {
 	if !n.authorized(r) {
-		writeError(w, 401, "node authentication required")
+		writeError(w, 401, "relay authentication required")
 		return
 	}
 	path, ok := n.scanner.ResolvePoster(r.PathValue("key"))
@@ -237,8 +284,18 @@ func (n *Node) servePoster(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path)
 }
 func (n *Node) authorized(r *http.Request) bool {
-	received := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return len(received) == len(n.config.NodeAPIToken) && received != "" && subtle.ConstantTimeCompare([]byte(received), []byte(n.config.NodeAPIToken)) == 1
+	received := r.Header.Get("X-Relay-Token")
+	return len(received) == len(n.config.RelayToken) && received != "" && subtle.ConstantTimeCompare([]byte(received), []byte(n.config.RelayToken)) == 1
+}
+func mediaType(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".mp4", ".m4v", ".mov":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	default:
+		return "application/octet-stream"
+	}
 }
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

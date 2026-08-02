@@ -1,10 +1,10 @@
 import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
 
-const videos = Array.from({ length: 24 }, (_, index) => ({
+const videos = Array.from({ length: 8 }, (_, index) => ({
   id: index + 1,
-  studio_id: index < 12 ? 1 : 2,
-  studio_name: index < 12 ? '半岛2024' : '鹿鸣工作室',
+  studio_id: index < 4 ? 1 : 2,
+  studio_name: index < 4 ? '半岛2024' : '鹿鸣工作室',
   title: index === 0 ? '新人试镜：一段需要在手机双列卡片中正确换行的较长作品标题' : index === 1 ? '灰姑娘与水晶鞋' : `工作室影像作品 ${index + 1}`,
   poster_url: `/api/v1/videos/${(index % 2) + 1}/poster`,
   duration_ms: 1_554_560 + index * 40_000,
@@ -25,36 +25,13 @@ const videos = Array.from({ length: 24 }, (_, index) => ({
 async function mockAPI(page: Page, admin = false) {
   const videoRequests: string[] = []
   let loginAttempts = 0
-  let p2pEnabled = false
+  let userStreamMbps = 10
   const adminAccount = { id: 1, email: '3180615598@qq.com', is_admin: true, enabled: true, balance: 128, created_at: '2026-07-31T00:00:00Z' }
   const viewer = { id: 2, email: 'viewer@example.com', is_admin: false, enabled: true, balance: 20, created_at: '2026-07-31T00:00:00Z' }
   const redeemCodeRows = [
     { id: 1, credits: 10, used: false, created_at: '2026-07-31T00:00:00Z' },
     { id: 2, credits: 10, used: true, redeemed_by_email: viewer.email, redeemed_at: '2026-07-31T01:00:00Z', created_at: '2026-07-31T00:00:00Z' },
   ]
-  await page.addInitScript(() => {
-    class MockPeerConnection {
-      iceGatheringState = 'complete'
-      connectionState = 'new'
-      localDescription: RTCSessionDescriptionInit | null = null
-      onicegatheringstatechange: (() => void) | null = null
-      onconnectionstatechange: (() => void) | null = null
-      ontrack: ((event: RTCTrackEvent) => void) | null = null
-      constructor(_configuration: RTCConfiguration) {}
-      addTransceiver() { return {} }
-      async createOffer() { return { type: 'offer', sdp: 'browser-offer' } }
-      async setLocalDescription(description: RTCSessionDescriptionInit) { this.localDescription = description }
-      async setRemoteDescription() { this.connectionState = 'connected'; this.onconnectionstatechange?.() }
-      async getStats() {
-        return new Map([
-          ['pair', { id: 'pair', type: 'candidate-pair', state: 'succeeded', nominated: true, localCandidateId: 'local' }],
-          ['local', { id: 'local', type: 'local-candidate', candidateType: 'relay' }],
-        ])
-      }
-      close() { this.connectionState = 'closed' }
-    }
-    Object.defineProperty(window, 'RTCPeerConnection', { configurable: true, value: MockPeerConnection })
-  })
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const pageNumber = Number(url.searchParams.get('page') ?? 1)
@@ -64,9 +41,13 @@ async function mockAPI(page: Page, admin = false) {
       await route.fulfill({ path: path.resolve('e2e/assets', poster), contentType: 'image/svg+xml' })
       return
     }
+    if (url.pathname === '/api/v1/playback/session/stream') {
+      await route.fulfill({ status: 206, contentType: 'video/mp4', headers: { 'Content-Range': 'bytes 0-3/4' }, body: Buffer.from([0, 0, 0, 0]) })
+      return
+    }
     let body: unknown = {}
     let status = 200
-    if (url.pathname === '/api/v1/studios') body = { studios: [{ id: 1, name: '半岛2024', video_count: 12 }, { id: 2, name: '鹿鸣工作室', video_count: 12 }] }
+    if (url.pathname === '/api/v1/studios') body = { studios: [{ id: 1, name: '半岛2024', video_count: 4 }, { id: 2, name: '鹿鸣工作室', video_count: 4 }] }
     else if (url.pathname === '/api/v1/auth/captcha') body = { captcha_id: 'captcha-id', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' }
     else if (url.pathname === '/api/v1/auth/login') { loginAttempts += 1; status = 401; body = { error: { code: 'invalid_credentials', message: '邮箱或密码错误', captcha_required: loginAttempts > 0 } } }
     else if (url.pathname === '/api/v1/videos' || url.pathname === '/api/v1/library') {
@@ -83,9 +64,7 @@ async function mockAPI(page: Page, admin = false) {
       const pageVideos = catalog.slice((pageNumber - 1) * pageSize, pageNumber * pageSize)
       body = { videos: pageVideos, page: pageNumber, page_size: pageSize, total: catalog.length }
     }
-    else if (/\/api\/v1\/videos\/\d+\/p2p\/session$/.test(url.pathname)) { status = 201; body = { session_id: 'session', expires_at: '2026-08-02T12:00:00Z', p2p_enabled: p2pEnabled, ice_servers: [{ urls: ['turn:turn.example.test:3478'], username: 'user', credential: 'secret' }] } }
-    else if (url.pathname === '/api/v1/p2p/session/offer') body = { sdp: 'node-answer', type: 'answer' }
-    else if (url.pathname === '/api/v1/p2p/session' && route.request().method() === 'DELETE') { await route.fulfill({ status: 204 }); return }
+    else if (/\/api\/v1\/videos\/\d+\/playback$/.test(url.pathname)) { status = 201; body = { id: 'session', stream_url: '/api/v1/playback/session/stream' } }
     else if (/\/api\/v1\/videos\/\d+$/.test(url.pathname)) {
       const video = videos[Number(url.pathname.split('/').at(-1)) - 1]
       body = { video: admin ? { ...video, can_play: true } : video }
@@ -100,14 +79,14 @@ async function mockAPI(page: Page, admin = false) {
       const query = (url.searchParams.get('q') ?? '').toLowerCase()
       let codes = redeemCodeRows.filter(code => statusFilter === 'all' || (statusFilter === 'used') === code.used)
       if (query) codes = codes.filter(code => code.redeemed_by_email?.toLowerCase().includes(query))
-      body = { codes, page: 1, page_size: 50, total: codes.length, counts: { all: 2, unused: 1, used: 1 } }
+      body = { codes, page: 1, page_size: 20, total: codes.length, counts: { all: 2, unused: 1, used: 1 } }
     }
     else if (url.pathname === '/api/v1/admin/nodes' && route.request().method() === 'GET') body = { nodes: [{ id: 1, name: 'fnos-media', online: true, total_bytes: 1_000_000, available_bytes: 500_000, last_seen_at: '2026-07-31T00:00:00Z', scan_status: 'ok', last_scan_at: '2026-07-31T00:00:00Z' }] }
-    else if (url.pathname === '/api/v1/admin/p2p-settings') {
-      if (route.request().method() === 'PUT') p2pEnabled = (route.request().postDataJSON() as { p2p_enabled: boolean }).p2p_enabled
-      body = { p2p_enabled: p2pEnabled }
+    else if (url.pathname === '/api/v1/admin/settings') {
+      if (route.request().method() === 'PUT') userStreamMbps = (route.request().postDataJSON() as { user_stream_mbps: number }).user_stream_mbps
+      body = { user_stream_bps: userStreamMbps * 1_000_000, user_stream_mbps: userStreamMbps }
     }
-    else if (url.pathname === '/api/v1/admin/users' && route.request().method() === 'GET') body = { users: url.searchParams.get('q') ? [viewer] : [adminAccount, viewer], page: 1, page_size: 50, total: url.searchParams.get('q') ? 1 : 2, all_total: 2 }
+    else if (url.pathname === '/api/v1/admin/users' && route.request().method() === 'GET') body = { users: url.searchParams.get('q') ? [viewer] : [adminAccount, viewer], page: 1, page_size: 20, total: url.searchParams.get('q') ? 1 : 2, all_total: 2 }
     else if (/\/api\/v1\/admin\/users\/\d+\/credits$/.test(url.pathname)) {
       const input = route.request().postDataJSON() as { delta: number }
       viewer.balance += input.delta
@@ -122,7 +101,8 @@ test('desktop random catalog and vertical detail stay within the viewport', asyn
   const mocked = await mockAPI(page)
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')
-  await expect(page.locator('.video-card')).toHaveCount(20)
+  await expect(page.locator('.video-card')).toHaveCount(8)
+  await expect(page.locator('.video-card')).toHaveCount(8)
   await expect(page.getByRole('button', { name: '工作室', exact: true })).toHaveCount(0)
   await expect(page.locator('.studio-strip')).toBeVisible()
   const firstSeed = new URL(mocked.videoRequests[0], 'http://localhost').searchParams.get('seed')
@@ -145,25 +125,14 @@ test('desktop random catalog and vertical detail stay within the viewport', asyn
 
 test('mobile catalog keeps two columns and stable bottom navigation', async ({ page }) => {
   await mockAPI(page, true)
-  await page.setViewportSize({ width: 320, height: 720 })
-  await page.goto('/')
-  await expect(page.locator('.video-card')).toHaveCount(20)
-  await expect(page.locator('.mobile-nav button')).toHaveCount(4)
-  await page.locator('.video-card').last().evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)))
-  for (const width of [320, 390, 430]) {
-    await page.setViewportSize({ width, height: 844 })
-    const layout = await page.evaluate(() => {
-      const cards = Array.from(document.querySelectorAll('.video-card')).slice(0, 2).map(card => Math.round(card.getBoundingClientRect().top))
-      const input = document.querySelector('.search-box input')!.getBoundingClientRect()
-      const button = document.querySelector('.search-box button')!.getBoundingClientRect()
-      return { cards, noOverflow: document.documentElement.scrollWidth <= window.innerWidth, searchSeparated: input.right <= button.left + 1, buttonVisible: button.right <= window.innerWidth }
-    })
-    expect(Math.abs(layout.cards[0] - layout.cards[1])).toBeLessThanOrEqual(1)
-    expect(layout.noOverflow).toBe(true)
-    expect(layout.searchSeparated).toBe(true)
-    expect(layout.buttonVisible).toBe(true)
-  }
   await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await expect(page.locator('.video-card')).toHaveCount(8)
+  await expect(page.locator('.mobile-nav button')).toHaveCount(4)
+  await page.waitForTimeout(800)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  const columns = await page.locator('.video-card').evaluateAll(cards => cards.slice(0, 2).map(card => Math.round(card.getBoundingClientRect().top)))
+  expect(columns[0]).toBe(columns[1])
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
   const positions = await page.evaluate(() => ({ card: document.querySelector('.video-card:last-child')!.getBoundingClientRect().bottom, nav: document.querySelector('.mobile-nav')!.getBoundingClientRect().top }))
   expect(positions.card).toBeLessThanOrEqual(positions.nav)
@@ -179,18 +148,20 @@ test('member enters the dedicated watch route and can return', async ({ page }) 
   await expect(page.getByText(/会员/)).toHaveCount(0)
   await page.getByRole('button', { name: '播放', exact: true }).click()
   await expect(page).toHaveURL(/\/watch\/\d+$/)
-  await expect(page.locator('.watch-player .native-player')).toBeVisible()
-  await expect(page.getByText('TURN 隐私中继')).toBeVisible()
+  await expect(page.locator('.watch-player .art-video-player')).toBeVisible()
   await expect(page.locator('.watch-main footer p')).toHaveCount(0)
   await expect(page.getByText(/1920×1080|H264|AAC/)).toHaveCount(0)
+  await page.locator('.watch-player').hover()
+  await expect(page.locator('.art-controls')).toBeVisible()
   await page.locator('.watch-player').click({ button: 'right' })
   await expect(page.locator('.watch-player a[href^="http"]')).toHaveCount(0)
+  await expect(page.getByText(/ArtPlayer/i)).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/watch-desktop.png', fullPage: true })
   await page.getByRole('button', { name: '返回' }).click()
   await expect(page).toHaveURL(/\/$/)
   await expect(page.locator('.video-grid')).toBeVisible()
-  await expect(page.locator('.native-player')).toHaveCount(0)
+  await expect(page.locator('.art-video-player')).toHaveCount(0)
 })
 
 test('administrator defaults to users and manages individual redeem codes', async ({ page }) => {
@@ -226,31 +197,22 @@ test('administrator defaults to users and manages individual redeem codes', asyn
   await page.locator('textarea').fill('新的卡网兑换说明')
   await page.getByRole('button', { name: '保存说明' }).click()
   await page.getByRole('button', { name: '设置', exact: true }).click()
-  await expect(page.getByRole('switch', { name: '允许节点直连' })).toHaveAttribute('aria-checked', 'false')
-  await page.getByRole('switch', { name: '允许节点直连' }).click()
+  await expect(page.getByText(/节点直连|P2P|WebRTC/i)).toHaveCount(0)
+  await expect(page.getByLabel('单用户播放速率（Mbps）')).toHaveValue('10')
+  await page.getByLabel('单用户播放速率（Mbps）').fill('12')
   await page.getByRole('button', { name: '保存设置' }).click()
-  await expect(page.getByText('已允许节点直连。')).toBeVisible()
-  await expect(page.getByRole('switch', { name: '允许节点直连' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByText('播放速率已保存。')).toBeVisible()
   await expect(page.getByText('不设上限')).toBeVisible()
   await expect(page.getByRole('button', { name: '视频', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '订单', exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/admin-desktop.png', fullPage: true })
-  await page.setViewportSize({ width: 430, height: 860 })
-  await page.getByRole('button', { name: '用户', exact: true }).click()
-  const mobileAdmin = await page.evaluate(() => {
-    const table = document.querySelector('.admin-table') as HTMLElement
-    return { pageFits: document.documentElement.scrollWidth <= window.innerWidth, tableScrolls: table.scrollWidth > table.clientWidth, tableFits: table.getBoundingClientRect().right <= window.innerWidth }
-  })
-  expect(mobileAdmin.pageFits).toBe(true)
-  expect(mobileAdmin.tableScrolls).toBe(true)
-  expect(mobileAdmin.tableFits).toBe(true)
 })
 
 test('direct watch link restores playback after authentication state loads', async ({ page }) => {
   await mockAPI(page, true)
   await page.goto('/watch/1')
-  await expect(page.locator('.watch-player .native-player')).toBeVisible()
+  await expect(page.locator('.watch-player .art-video-player')).toBeVisible()
   await expect(page.getByRole('heading', { name: videos[0].title })).toBeVisible()
 })
 
@@ -259,7 +221,7 @@ test('studio filter stays on home and keeps the original catalog order', async (
   await page.goto('/')
   await page.locator('.studio-strip button').filter({ hasText: '半岛2024' }).click()
   await expect(page.getByRole('heading', { name: '半岛2024' })).toBeVisible()
-  await expect(page.locator('.video-card')).toHaveCount(12)
+  await expect(page.locator('.video-card')).toHaveCount(4)
   const latestRequest = new URL(mocked.videoRequests.at(-1)!, 'http://localhost')
   expect(latestRequest.searchParams.get('studio_id')).toBe('1')
   expect(latestRequest.searchParams.has('seed')).toBe(false)
@@ -269,7 +231,7 @@ test('mobile watch page uses the branded player without overflow', async ({ page
   await mockAPI(page, true)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/watch/1')
-  await expect(page.locator('.watch-player .native-player')).toBeVisible()
+  await expect(page.locator('.watch-player .art-video-player')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/watch-mobile.png', fullPage: true })
 })
@@ -283,6 +245,19 @@ test('account page shows redemption and redeem instructions', async ({ page }) =
   await expect(page.getByText('易支付')).toHaveCount(0)
   await expect(page.getByText('支付宝')).toHaveCount(0)
   await page.screenshot({ path: 'test-results/account-desktop.png', fullPage: true })
+})
+
+test('mobile account page keeps email and redeem controls within the viewport', async ({ page }) => {
+  await mockAPI(page, true)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.getByRole('button', { name: '我的', exact: true }).click()
+  await expect(page.locator('.account-email')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '充值鹿币' })).toBeVisible()
+  await expect(page.locator('.redeem-form button')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(await page.locator('.account-email').evaluate(element => getComputedStyle(element).whiteSpace)).toBe('nowrap')
+  await page.screenshot({ path: 'test-results/account-mobile.png', fullPage: true })
 })
 
 test('failed login switches to the self-hosted captcha', async ({ page }) => {

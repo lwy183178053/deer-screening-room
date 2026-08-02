@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -117,7 +118,7 @@ func TestNodeSkipsUnchangedInventorySync(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "sample.mp4"), []byte("0123456789"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: server.URL, NodeAPIToken: "node-token", MediaRoot: root, PosterRoot: t.TempDir(), HTTPClient: server.Client()})
+	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: server.URL, NodeAPIToken: "node-token", RelayToken: "relay-token", MediaRoot: root, PosterRoot: t.TempDir(), HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,40 +141,48 @@ func TestNodeSkipsUnchangedInventorySync(t *testing.T) {
 	}
 }
 
-func TestNodeRemovesHTTPMediaEndpointAndUsesAPIAuthentication(t *testing.T) {
+func TestNodeRangeAndRelayAuthentication(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "sample.mp4"), []byte("0123456789"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: "http://gateway", NodeAPIToken: "node-token", MediaRoot: root, PosterRoot: posters, HTTPClient: &http.Client{}})
+	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: "http://gateway", NodeAPIToken: "node-token", RelayToken: "relay-token", MediaRoot: root, PosterRoot: posters, MaxStreams: 1, HTTPClient: &http.Client{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	node.scanner.probe = func(string) (probeResult, error) {
 		return probeResult{DurationMS: 1000, VideoCodec: "h264", AudioCodec: "aac"}, nil
 	}
-	node.scanner.poster = func(_, destination string) error { return os.WriteFile(destination, []byte("jpeg"), 0o600) }
+	node.scanner.poster = func(string, string) error { return nil }
 	items, err := node.scanner.Scan()
 	if err != nil || len(items) != 1 {
 		t.Fatalf("scan=%d err=%v", len(items), err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/internal/media/"+items[0].MediaKey, nil)
-	request.Header.Set("Authorization", "Bearer node-token")
+	request.Header.Set("X-Relay-Token", "relay-token")
+	request.Header.Set("Range", "bytes=2-5")
 	response := httptest.NewRecorder()
 	node.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("removed media endpoint=%d %q", response.Code, response.Body.String())
+	if response.Code != http.StatusPartialContent || response.Body.String() != "2345" || !strings.Contains(response.Header().Get("Content-Range"), "2-5/10") {
+		t.Fatalf("range=%d %q %q", response.Code, response.Body.String(), response.Header().Get("Content-Range"))
 	}
-	poster := httptest.NewRequest(http.MethodGet, "/internal/posters/"+items[0].MediaKey, nil)
-	poster.Header.Set("Authorization", "Bearer node-token")
-	authorized := httptest.NewRecorder()
-	node.Handler().ServeHTTP(authorized, poster)
-	if authorized.Code != http.StatusOK {
-		t.Fatalf("authorized poster=%d", authorized.Code)
+	unauthorized := httptest.NewRecorder()
+	node.Handler().ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/internal/media/"+items[0].MediaKey, nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized=%d", unauthorized.Code)
+	}
+	node.streamSlots <- struct{}{}
+	busyRequest := httptest.NewRequest(http.MethodGet, "/internal/media/"+items[0].MediaKey, nil)
+	busyRequest.Header.Set("X-Relay-Token", "relay-token")
+	busy := httptest.NewRecorder()
+	node.Handler().ServeHTTP(busy, busyRequest)
+	<-node.streamSlots
+	if busy.Code != http.StatusServiceUnavailable {
+		t.Fatalf("busy node status=%d", busy.Code)
 	}
 	put := httptest.NewRequest(http.MethodPut, "/internal/posters/"+items[0].MediaKey, nil)
-	put.Header.Set("Authorization", "Bearer node-token")
+	put.Header.Set("X-Relay-Token", "relay-token")
 	removed := httptest.NewRecorder()
 	node.Handler().ServeHTTP(removed, put)
 	if removed.Code != http.StatusMethodNotAllowed {

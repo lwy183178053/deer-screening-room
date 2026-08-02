@@ -8,17 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"deerroom/internal/media"
 	"deerroom/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/pion/webrtc/v4"
 )
 
-func TestP2PPlaybackIntegration(t *testing.T) {
+func TestPlaybackProxyIntegration(t *testing.T) {
 	databaseURL := os.Getenv("TEST_HTTP_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_HTTP_DATABASE_URL is not set")
@@ -41,28 +38,20 @@ func TestP2PPlaybackIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool.Close()
-	var offerCalls, closeCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer node-token" {
+		if r.Header.Get("X-Relay-Token") != "relay-token" {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
-		switch r.URL.Path {
-		case "/internal/webrtc/offer":
-			var offer media.WebRTCOffer
-			if json.NewDecoder(r.Body).Decode(&offer) != nil || offer.MediaKey != "media-key" || offer.AllowDirect || len(offer.ICEServers) != 1 {
-				http.Error(w, "invalid offer", http.StatusUnprocessableEntity)
-				return
-			}
-			offerCalls.Add(1)
-			writeJSON(w, http.StatusOK, media.WebRTCAnswer{SessionID: offer.SessionID, SDP: "node-answer", Type: "answer"})
-		case "/internal/webrtc/close":
-			closeCalls.Add(1)
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
+		if r.Header.Get("Range") == "bytes=2-5" {
+			w.Header().Set("Content-Range", "bytes 2-5/10")
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.Header().Set("Content-Length", "4")
+			w.WriteHeader(206)
+			_, _ = w.Write([]byte("2345"))
 			return
 		}
+		_, _ = w.Write([]byte("0123456789"))
 	}))
 	defer upstream.Close()
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
@@ -88,8 +77,8 @@ func TestP2PPlaybackIntegration(t *testing.T) {
 	if _, err := db.UnlockVideo(ctx, user.ID, videos[0].ID, "HTTP-UNLOCK", now); err != nil {
 		t.Fatal(err)
 	}
-	handler := New(Options{Store: db, NodeAPIToken: "node-token", TurnURLs: []string{"turn:turn.example.test:3478"}, TurnSecret: "turn-secret", TurnTTL: time.Hour, Now: func() time.Time { return now }})
-	create := httptest.NewRequest(http.MethodPost, "/api/v1/videos/1/p2p/session", bytes.NewReader([]byte(`{}`)))
+	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", UserStreamBPS: 4_000_000, Now: func() time.Time { return now }})
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/videos/1/playback", bytes.NewReader([]byte(`{}`)))
 	create.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
 	create.Header.Set("X-CSRF-Token", "csrf")
 	created := httptest.NewRecorder()
@@ -98,49 +87,18 @@ func TestP2PPlaybackIntegration(t *testing.T) {
 		t.Fatalf("create=%d %s", created.Code, created.Body.String())
 	}
 	var body struct {
-		SessionID  string             `json:"session_id"`
-		ICEServers []webrtc.ICEServer `json:"ice_servers"`
+		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(created.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.SessionID == "" || len(body.ICEServers) != 1 {
-		t.Fatalf("session=%+v", body)
-	}
-	secondCreate := httptest.NewRequest(http.MethodPost, "/api/v1/videos/1/p2p/session", bytes.NewReader([]byte(`{}`)))
-	secondCreate.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
-	secondCreate.Header.Set("X-CSRF-Token", "csrf")
-	secondCreated := httptest.NewRecorder()
-	handler.ServeHTTP(secondCreated, secondCreate)
-	if secondCreated.Code != http.StatusCreated || closeCalls.Load() != 1 {
-		t.Fatalf("replacement=%d close calls=%d body=%s", secondCreated.Code, closeCalls.Load(), secondCreated.Body.String())
-	}
-	if err := json.Unmarshal(secondCreated.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	offer := httptest.NewRequest(http.MethodPost, "/api/v1/p2p/"+body.SessionID+"/offer", bytes.NewBufferString(`{"sdp":"browser-offer","type":"offer"}`))
-	offer.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
-	offer.Header.Set("X-CSRF-Token", "csrf")
-	answered := httptest.NewRecorder()
-	handler.ServeHTTP(answered, offer)
-	if answered.Code != http.StatusOK || !bytes.Contains(answered.Body.Bytes(), []byte("node-answer")) || offerCalls.Load() != 1 {
-		t.Fatalf("offer=%d calls=%d body=%s", answered.Code, offerCalls.Load(), answered.Body.String())
-	}
-	closeRequest := httptest.NewRequest(http.MethodDelete, "/api/v1/p2p/"+body.SessionID, nil)
-	closeRequest.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
-	closeRequest.Header.Set("X-CSRF-Token", "csrf")
-	closed := httptest.NewRecorder()
-	handler.ServeHTTP(closed, closeRequest)
-	if closed.Code != http.StatusNoContent || closeCalls.Load() != 2 {
-		t.Fatalf("close=%d calls=%d", closed.Code, closeCalls.Load())
-	}
-	for _, removed := range []struct{ method, path string }{{http.MethodPost, "/api/v1/videos/1/playback"}, {http.MethodGet, "/api/v1/playback/old/stream"}} {
-		request := httptest.NewRequest(removed.method, removed.path, bytes.NewReader([]byte(`{}`)))
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code != http.StatusNotFound {
-			t.Fatalf("removed %s %s=%d", removed.method, removed.path, response.Code)
-		}
+	stream := httptest.NewRequest(http.MethodGet, "/api/v1/playback/"+body.ID+"/stream", nil)
+	stream.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+	stream.Header.Set("Range", "bytes=2-5")
+	streamed := httptest.NewRecorder()
+	handler.ServeHTTP(streamed, stream)
+	if streamed.Code != 206 || streamed.Body.String() != "2345" {
+		t.Fatalf("stream=%d %q", streamed.Code, streamed.Body.String())
 	}
 }
 
@@ -180,7 +138,7 @@ func TestAdminUserCreditsIntegration(t *testing.T) {
 	if err := db.CreateSession(ctx, tokenHash[:], admin.ID, "csrf", now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	handler := New(Options{Store: db, NodeAPIToken: "node-token", Now: func() time.Time { return now }})
+	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", UserStreamBPS: 4_000_000, Now: func() time.Time { return now }})
 
 	search := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?q=VIEWER", nil)
 	search.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})

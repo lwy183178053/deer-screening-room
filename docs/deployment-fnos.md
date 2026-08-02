@@ -1,16 +1,19 @@
-# Cloud and media-node deployment
+# Cloud and FNOS deployment
 
-## 1. Secrets and WireGuard
+## 1. Prepare keys and secrets
 
-云端与每台 Windows、飞牛或 Linux 节点分别生成 WireGuard 密钥。每台节点只生成一份独立 API Token；数据库密码、管理员密码、TURN 共享密钥、私钥、令牌和 `.env` 不进入 Git。
+在云端与每台 Windows、飞牛或 Linux NAS 节点安装 Docker。云端和每台节点分别生成 WireGuard 密钥，并为每台节点生成独立的 API Token 与 Relay Token；数据库密码、管理员密码、私钥、令牌和 `.env` 不进入 Git。
+
+云端复制：
 
 ```bash
 cd deploy/cloud
 cp .env.example .env
-# DEER_STUN_URLS 只在管理员允许直连时使用；默认可保留为 104 的 3478 STUN 地址
 mkdir -p wireguard/wg_confs
 cp wg0.conf.example wireguard/wg_confs/wg0.conf
 ```
+
+第一台节点复制：
 
 ```bash
 cd deploy/media-node
@@ -18,24 +21,13 @@ cp .env.example .env
 mkdir -p wireguard posters
 ```
 
-云端 `wg0.conf` 为每台节点添加独立 Peer。云端 `.env` 的 `DEER_NODE_CREDENTIALS` 使用相同节点名、API Token 和 `base_url`。节点 `.env` 填入唯一 WireGuard 地址、双方公钥、节点私钥、云服务器端点和节点内部地址。WireGuard UDP 端点直接使用服务器 IP，例如 `SERVER_IP:51820`，不经过 Cloudflare。
+云端 `wg0.conf` 为每台节点添加独立 Peer；云端 `.env` 的 `DEER_NODE_CREDENTIALS` 使用相同节点名、Token 和 `base_url`。节点 `.env` 填入唯一 WireGuard 地址、双方公钥、节点私钥、云服务器端点和节点内部地址，Compose 启动前会自动生成 `wireguard/wg_confs/wg0.conf`。云安全组只需开放 `80/tcp`、`443/tcp`、`443/udp` 和 `51820/udp`；不要开放节点的 `8081`。
 
-## 2. Ports and coturn
+## 2. Configure the media path
 
-云端安全组和主机防火墙开放：
+在宿主机确认视频根目录的真实路径，将它写入节点 `.env` 的 `DEER_MEDIA_HOST_PATH`。Compose 以 `/media:ro` 挂载，应用不会修改视频文件。`posters/` 是可写生成目录，丢失后可重新扫描生成。
 
-- `80/tcp`、`443/tcp`、`443/udp`：网站与 HTTP/3。
-- `51820/udp`：WireGuard 控制通道。
-- `3478/tcp`、`3478/udp`：TURN 客户端连接。
-- `49160-65535/udp`：TURN 媒体 relay 范围。
-
-`DEER_TURN_EXTERNAL_IP` 填服务器实际持有的公网 IP，coturn 的监听地址和 relay 地址都会只绑定该 IP；多公网 IP 主机不得使用全接口监听。`DEER_TURN_URLS` 使用同一公网 IP 同时配置 UDP 与 TCP URL。不要填写经过 Cloudflare 代理的业务域名，标准代理不转发 `3478`。coturn 使用 TURN REST 临时凭据，容器不保存长期用户列表；relay 禁止访问回环、链路本地和 RFC1918 私网地址，避免利用 TURN 探测云端内网。
-
-管理员默认关闭“允许节点直连”。此时浏览器与节点都只发布 relay candidate，观看者看不到节点公网候选。开启直连后可降低延迟与云端流量，但 WebRTC 对端可能看到节点公网候选。
-
-## 3. Media path
-
-将节点 `.env` 的 `DEER_MEDIA_HOST_PATH` 指向视频根目录。Compose 以 `/media:ro` 挂载，`posters/` 是可重建的封面缓存。
+源目录约定：
 
 ```text
 视频根目录/
@@ -45,69 +37,49 @@ mkdir -p wireguard posters
     作品二.mp4
 ```
 
-Windows bind mount 的单个文件名 UTF-8 长度不能超过 255 字节。不能修改原始文件名时运行 `scripts\watch-media-view.cmd`，让节点只读挂载 `E:\BaiduNetdiskDownload\.deer-media-view`；脚本使用同盘硬链接和 `catalog-titles.json` 保留完整标题，不复制或删除原视频。
+Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。中文文件名较长时可能导致整个工作室目录返回 `input/output error`，节点扫描会失败。建议视频文件名控制在 240 个 UTF-8 字节以内；如果目录已经存在超长文件名，请先缩短文件名后再点击后台的“重新扫描”。
 
-## 4. Start the cloud stack
+如果不能修改原始文件名，可在 Windows 节点运行 `scripts\watch-media-view.cmd`。它会在 `E:\BaiduNetdiskDownload\.deer-media-view` 创建同盘硬链接视图，超长文件名使用短别名，原始完整标题写入 `catalog-titles.json`，节点仍会显示完整标题。Docker 的 `DEER_MEDIA_HOST_PATH` 应指向这个视图目录；原始视频不会被复制或删除。开发机使用 `scripts\dev-up.ps1` 启动时会先生成一次兼容视图；持续新增文件时请让 `watch-media-view.cmd` 保持运行。
 
-独占 `80/443` 的服务器：
+## 3. Start services
+
+独占 `80/443` 的服务器先启动云端：
 
 ```bash
 docker compose --env-file .env up -d --build
 docker compose ps
-docker compose logs --tail=100 wireguard coturn gateway web
+docker compose logs -f wireguard gateway
 ```
 
-已有宿主机 Caddy 的服务器：
+服务器已有宿主机 Caddy 时，使用覆盖配置，Web 只监听宿主机回环端口：
 
 ```bash
 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --build
 curl -fsS http://127.0.0.1:${DEER_WEB_PORT:-28200}/api/v1/health
-docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml ps
 ```
 
-宿主机 Caddy 只增加独立站点块：
+宿主机 Caddy 为新域名单独增加站点，不改其他站点块：
 
 ```caddyfile
-xiaolu.lwylink.xyz {
+video.example.com {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy 127.0.0.1:28200
 }
 ```
 
-替换前备份 `/etc/caddy/Caddyfile`，先运行 `caddy validate --config CANDIDATE`，原子替换后只执行 `systemctl reload caddy`。不得重启或修改服务器上的其他 Compose 项目。
+修改前备份现有 Caddyfile，使用 `caddy validate --config` 验证候选文件后再替换并执行 `systemctl reload caddy`。回滚时恢复备份并 reload；停止小鹿服务时必须同时指定两份 Compose 文件且不要使用 `-v`。
 
-验证 coturn：
-
-```bash
-docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml ps coturn
-docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml logs --tail=100 coturn
-ss -lntup | grep ':3478'
-ss -lnup | grep ':51820'
-```
-
-## 5. Start a media node
+确认云端 `wg0` 为 `10.77.0.1/24` 后启动节点：
 
 ```bash
 docker compose --env-file .env up -d --build
 docker compose ps
-docker compose logs --tail=100 wireguard media-node
+docker compose logs -f wireguard media-node
 ```
 
-两端 `wg show` 应有最新握手，管理员节点页应在 90 秒内显示在线。首次扫描逐个执行 `ffprobe` 与封面抽取；目录版本未变化时只发送心跳。媒体节点不再提供 HTTP 视频端点，也没有 Relay Token、带宽令牌桶或连接槽位。
+节点 WireGuard 日志应显示握手，云端管理员节点页应在 90 秒内显示在线。新增第二节点时使用 `.env.node-2.example` 作为起点，分配新名称、地址、密钥和本地目录，并在云端增加对应 Peer 与凭据映射。首次扫描会逐个执行 `ffprobe` 和单任务封面抽取；后续扫描只处理变化文件，目录版本不变时只发送心跳。
 
-## 6. Playback acceptance
+## 4. Bandwidth
 
-用管理员已解锁视频分别验证两种模式：
-
-1. 关闭节点直连，播放页显示“TURN 隐私中继”，浏览器 `getStats()` 的选中 candidate pair 包含 relay candidate。
-2. 开启节点直连，网络允许时显示“节点直连”；NAT 穿透失败时仍自动回落到 TURN。
-3. 播放画面与音频实际加载，倍速和全屏可用；Gateway 网络流量不再包含视频字节。
-4. 320px、390px、430px 下目录为两列，搜索按钮可见，播放页无横向溢出，后台表格只在表格内滚动。
-
-## 7. Rollback
-
-- Caddy：恢复部署前备份并 reload。
-- 云端：仅停止 `deer-screening-room-cloud`，命令需同时带基础与宿主机 Caddy 覆盖文件，不加 `-v`。
-- 节点：仅停止 `deer-screening-room-media-1`，保留 WireGuard、封面缓存、兼容视图和原视频。
-- WebRTC 版本：恢复部署前 Git 提交、Compose 与 `.env` 备份后重建 Gateway、Web、coturn 和媒体节点。旧 HTTP Relay 代码已删除，回滚必须使用完整旧提交，不能混用新旧 Gateway 与节点。
+节点不再设置总带宽令牌桶，媒体节点会按实际网络和磁盘能力发送数据；仍保留 `DEER_NODE_MAX_STREAMS` 并发连接上限。单账号播放速率由管理员后台“设置”保存，初始为 10 Mbps。

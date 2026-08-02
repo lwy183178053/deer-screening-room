@@ -11,14 +11,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"deerroom/internal/bandwidth"
 	"deerroom/internal/store"
 )
 
 const SessionCookieName = "deer_session"
 
 type NodeCredential struct {
-	APIToken string
-	BaseURL  string
+	APIToken   string
+	RelayToken string
+	BaseURL    string
 }
 
 type Options struct {
@@ -26,16 +28,14 @@ type Options struct {
 	CookieSecure            bool
 	SessionTTL              time.Duration
 	NodeAPIToken            string
+	RelayToken              string
+	UserStreamBPS           int64
 	HTTPClient              *http.Client
 	Now                     func() time.Time
 	PasswordHashConcurrency int
+	UserMaxStreams          int
 	UserStreamRPM           int
 	NodeCredentials         map[string]NodeCredential
-	TurnURLs                []string
-	StunURLs                []string
-	TurnSecret              string
-	TurnTTL                 time.Duration
-	P2PEnabled              bool
 }
 
 type API struct {
@@ -43,7 +43,10 @@ type API struct {
 	cookieSecure    bool
 	sessionTTL      time.Duration
 	nodeAPIToken    string
+	relayToken      string
+	userStreamBPS   atomic.Int64
 	httpClient      *http.Client
+	bandwidth       *bandwidth.Manager
 	now             func() time.Time
 	captchas        *captchaManager
 	authGuard       *authGuard
@@ -51,11 +54,6 @@ type API struct {
 	streamGuard     *streamGuard
 	nodeCredentials map[string]NodeCredential
 	nodeStates      *nodeStateStore
-	turnURLs        []string
-	stunURLs        []string
-	turnSecret      string
-	turnTTL         time.Duration
-	p2pEnabled      atomic.Bool
 }
 
 func New(options Options) http.Handler {
@@ -71,24 +69,27 @@ func New(options Options) http.Handler {
 	if options.PasswordHashConcurrency < 1 {
 		options.PasswordHashConcurrency = 4
 	}
+	if options.UserMaxStreams < 1 {
+		options.UserMaxStreams = 4
+	}
 	if options.UserStreamRPM < 1 {
 		options.UserStreamRPM = 120
+	}
+	if options.UserStreamBPS < 1 {
+		options.UserStreamBPS = 10_000_000
 	}
 	api := &API{
 		store: options.Store, cookieSecure: options.CookieSecure, sessionTTL: options.SessionTTL,
 		nodeAPIToken: options.NodeAPIToken,
-		httpClient:   options.HTTPClient, now: options.Now,
+		relayToken:   options.RelayToken,
+		httpClient:   options.HTTPClient, bandwidth: bandwidth.NewManager(), now: options.Now,
 		captchas: newCaptchaManager(options.Now), authGuard: newAuthGuard(options.Now),
 		passwordSlots:   make(chan struct{}, options.PasswordHashConcurrency),
-		streamGuard:     newStreamGuard(options.Now, options.UserStreamRPM),
+		streamGuard:     newStreamGuard(options.Now, options.UserMaxStreams, options.UserStreamRPM),
 		nodeCredentials: options.NodeCredentials,
 		nodeStates:      newNodeStateStore(),
-		turnURLs:        options.TurnURLs,
-		stunURLs:        options.StunURLs,
-		turnSecret:      options.TurnSecret,
-		turnTTL:         options.TurnTTL,
 	}
-	api.p2pEnabled.Store(options.P2PEnabled)
+	api.userStreamBPS.Store(options.UserStreamBPS)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", api.health)
 	mux.HandleFunc("GET /api/v1/auth/captcha", api.captcha)
@@ -104,8 +105,8 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/redeem-codes", api.createRedeemCodes)
 	mux.HandleFunc("GET /api/v1/admin/redeem-notice", api.getRedeemNotice)
 	mux.HandleFunc("PUT /api/v1/admin/redeem-notice", api.updateRedeemNotice)
-	mux.HandleFunc("GET /api/v1/admin/p2p-settings", api.getAdminP2PSettings)
-	mux.HandleFunc("PUT /api/v1/admin/p2p-settings", api.updateAdminP2PSettings)
+	mux.HandleFunc("GET /api/v1/admin/settings", api.getAdminSettings)
+	mux.HandleFunc("PUT /api/v1/admin/settings", api.updateAdminSettings)
 	api.registerCatalogRoutes(mux)
 	api.registerMediaRoutes(mux)
 	return securityHeaders(mux)

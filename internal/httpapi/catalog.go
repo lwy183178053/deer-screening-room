@@ -95,7 +95,12 @@ func (a *API) getPoster(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+a.nodeTokenFor(video.NodeName))
+	relayToken, ok := a.relayTokenFor(video.NodeName)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	request.Header.Set("X-Relay-Token", relayToken)
 	response, err := a.httpClient.Do(request)
 	if err != nil {
 		http.NotFound(w, r)
@@ -237,7 +242,12 @@ func (a *API) adminRescan(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
-	request.Header.Set("Authorization", "Bearer "+a.nodeTokenFor(node.Name))
+	relayToken, ok := a.relayTokenFor(node.Name)
+	if !ok {
+		writeError(w, http.StatusBadGateway, "node_configuration_invalid", "节点配置无效")
+		return
+	}
+	request.Header.Set("X-Relay-Token", relayToken)
 	response, err := a.httpClient.Do(request)
 	if err != nil {
 		writeError(w, 502, "node_unavailable", "无法连接媒体节点")
