@@ -10,7 +10,7 @@
 
 播放：前端 `/watch/{videoId}` 使用自托管 Artplayer 独立播放页；`POST /api/v1/videos/{id}/playback` 创建单账号唯一会话，返回同源 `/api/v1/playback/{id}/stream`。流接口支持 GET、HEAD、Range 和缓存条件头，播放器不加载广告、第三方脚本或外部链接。
 
-管理员：`users`、`redeem-codes`、`redeem-notice`、`nodes` 和播放速率 `settings`。兑换码创建响应为一次性 UTF-8 TXT 下载（每行一个纯兑换码）；`GET/PUT /api/v1/admin/redeem-notice` 用于读取和保存充值区兑换说明；`GET /api/v1/admin/redeem-codes` 支持 `status`、`q` 和 `page`，返回单码状态、使用者和统计数量。`GET/PUT /api/v1/admin/settings` 只读取和保存 `user_stream_mbps`。节点响应包含 `scan_status`、`last_scan_at` 和可选 `scan_error`；重新扫描立即返回 `202`。用户查询支持 `q` 和 `page`，并返回 `all_total`；`POST /api/v1/admin/users/{id}/credits` 使用 `delta`、可选 `reason` 和幂等 `request_id` 调整鹿币。
+管理员：`users`、`redeem-codes`、`redeem-notice` 和 `nodes`。兑换码创建响应为一次性 UTF-8 TXT 下载（每行一个纯兑换码）；`GET/PUT /api/v1/admin/redeem-notice` 用于读取和保存充值区兑换说明；`GET /api/v1/admin/redeem-codes` 支持 `status`、`q` 和 `page`，返回单码状态、使用者和统计数量。节点响应包含 `scan_status`、`last_scan_at` 和可选 `scan_error`；重新扫描立即返回 `202`。用户查询支持 `q` 和 `page`，并返回 `all_total`；`POST /api/v1/admin/users/{id}/credits` 使用 `delta`、可选 `reason` 和幂等 `request_id` 调整鹿币。
 
 视频管理不提供人工编辑接口。标题、工作室和封面由 NAS 目录扫描产生；管理员只能在节点接口触发重新扫描。
 

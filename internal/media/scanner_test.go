@@ -100,6 +100,60 @@ func TestScannerUsesTitleManifest(t *testing.T) {
 	}
 }
 
+func TestScannerAcceptsAV1MP4(t *testing.T) {
+	root := t.TempDir()
+	posters := t.TempDir()
+	videoPath := filepath.Join(root, "av1.mp4")
+	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := NewScanner(root, posters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner.probe = func(string) (probeResult, error) {
+		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac"}, nil
+	}
+	scanner.poster = func(string, string) error { return nil }
+	items, err := scanner.Scan()
+	if err != nil || len(items) != 1 || items[0].Compatibility != "ready" {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+}
+
+func TestScannerRefreshesCachedCompatibility(t *testing.T) {
+	root := t.TempDir()
+	posters := t.TempDir()
+	videoPath := filepath.Join(root, "cached.mp4")
+	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(videoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := []cachedItem{{Item: Item{MediaKey: mediaKey("cached.mp4"), VideoCodec: "av1", AudioCodec: "aac", Compatibility: "unsupported", SizeBytes: info.Size()}, RelativePath: "cached.mp4", ModifiedUnix: info.ModTime().Unix()}}
+	body, err := json.Marshal(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(posters, "catalog-cache.json"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := NewScanner(root, posters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner.probe = func(string) (probeResult, error) {
+		t.Fatal("cached media should not be probed")
+		return probeResult{}, nil
+	}
+	items, err := scanner.Scan()
+	if err != nil || len(items) != 1 || items[0].Compatibility != "ready" {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+}
+
 func TestNodeSkipsUnchangedInventorySync(t *testing.T) {
 	var syncRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +201,7 @@ func TestNodeRangeAndRelayAuthentication(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "sample.mp4"), []byte("0123456789"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: "http://gateway", NodeAPIToken: "node-token", RelayToken: "relay-token", MediaRoot: root, PosterRoot: posters, MaxStreams: 1, HTTPClient: &http.Client{}})
+	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: "http://gateway", NodeAPIToken: "node-token", RelayToken: "relay-token", MediaRoot: root, PosterRoot: posters, HTTPClient: &http.Client{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,15 +225,6 @@ func TestNodeRangeAndRelayAuthentication(t *testing.T) {
 	node.Handler().ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/internal/media/"+items[0].MediaKey, nil))
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized=%d", unauthorized.Code)
-	}
-	node.streamSlots <- struct{}{}
-	busyRequest := httptest.NewRequest(http.MethodGet, "/internal/media/"+items[0].MediaKey, nil)
-	busyRequest.Header.Set("X-Relay-Token", "relay-token")
-	busy := httptest.NewRecorder()
-	node.Handler().ServeHTTP(busy, busyRequest)
-	<-node.streamSlots
-	if busy.Code != http.StatusServiceUnavailable {
-		t.Fatalf("busy node status=%d", busy.Code)
 	}
 	put := httptest.NewRequest(http.MethodPut, "/internal/posters/"+items[0].MediaKey, nil)
 	put.Header.Set("X-Relay-Token", "relay-token")

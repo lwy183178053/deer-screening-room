@@ -20,13 +20,11 @@ type NodeConfig struct {
 	Name, PublicURL, GatewayURL, NodeAPIToken, RelayToken string
 	MediaRoot, PosterRoot                                 string
 	HTTPClient                                            *http.Client
-	MaxStreams                                            int
 }
 
 type Node struct {
 	config             NodeConfig
 	scanner            *Scanner
-	streamSlots        chan struct{}
 	stateMu            sync.RWMutex
 	scanning           bool
 	lastScanAt         time.Time
@@ -48,14 +46,11 @@ func NewNode(config NodeConfig) (*Node, error) {
 		transport.ResponseHeaderTimeout = 15 * time.Second
 		config.HTTPClient = &http.Client{Transport: transport, Timeout: 5 * time.Minute}
 	}
-	if config.MaxStreams < 1 {
-		config.MaxStreams = 64
-	}
 	scanner, err := NewScanner(config.MediaRoot, config.PosterRoot)
 	if err != nil {
 		return nil, err
 	}
-	return &Node{config: config, scanner: scanner, streamSlots: make(chan struct{}, config.MaxStreams)}, nil
+	return &Node{config: config, scanner: scanner}, nil
 }
 
 func (n *Node) Handler() http.Handler {
@@ -239,16 +234,6 @@ func (n *Node) serveMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.NotFound(w, r)
 		return
-	}
-	if r.Method == http.MethodGet {
-		select {
-		case n.streamSlots <- struct{}{}:
-			defer func() { <-n.streamSlots }()
-		default:
-			w.Header().Set("Retry-After", "1")
-			writeError(w, http.StatusServiceUnavailable, "media node is busy")
-			return
-		}
 	}
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {

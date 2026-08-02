@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"deerroom/internal/bandwidth"
 	"deerroom/internal/media"
 	"deerroom/internal/store"
 )
@@ -108,12 +107,11 @@ func (a *API) streamPlayback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	release, allowed, retry := a.streamGuard.begin(account.ID, r.Method == http.MethodGet)
+	allowed, retry := a.streamGuard.begin(account.ID)
 	if !allowed {
 		writeRateLimited(w, retry)
 		return
 	}
-	defer release()
 	video, err := a.store.PlaybackVideo(r.Context(), r.PathValue("id"), account.ID, a.now())
 	if err != nil {
 		storeError(w, err)
@@ -157,8 +155,7 @@ func (a *API) streamPlayback(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(response.StatusCode)
 	if r.Method == http.MethodGet && (response.StatusCode == 200 || response.StatusCode == 206) {
-		bytesPerSecond := max(a.userStreamBPS.Load()/8, 1)
-		_, _ = bandwidth.Copy(r.Context(), a.bandwidth.Limiter(account.ID, bytesPerSecond), w, response.Body)
+		_, _ = io.Copy(w, response.Body)
 	}
 }
 

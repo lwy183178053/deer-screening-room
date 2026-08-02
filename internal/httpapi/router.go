@@ -8,10 +8,8 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"sync/atomic"
 	"time"
 
-	"deerroom/internal/bandwidth"
 	"deerroom/internal/store"
 )
 
@@ -29,11 +27,9 @@ type Options struct {
 	SessionTTL              time.Duration
 	NodeAPIToken            string
 	RelayToken              string
-	UserStreamBPS           int64
 	HTTPClient              *http.Client
 	Now                     func() time.Time
 	PasswordHashConcurrency int
-	UserMaxStreams          int
 	UserStreamRPM           int
 	NodeCredentials         map[string]NodeCredential
 }
@@ -44,9 +40,7 @@ type API struct {
 	sessionTTL      time.Duration
 	nodeAPIToken    string
 	relayToken      string
-	userStreamBPS   atomic.Int64
 	httpClient      *http.Client
-	bandwidth       *bandwidth.Manager
 	now             func() time.Time
 	captchas        *captchaManager
 	authGuard       *authGuard
@@ -69,27 +63,20 @@ func New(options Options) http.Handler {
 	if options.PasswordHashConcurrency < 1 {
 		options.PasswordHashConcurrency = 4
 	}
-	if options.UserMaxStreams < 1 {
-		options.UserMaxStreams = 4
-	}
 	if options.UserStreamRPM < 1 {
 		options.UserStreamRPM = 120
-	}
-	if options.UserStreamBPS < 1 {
-		options.UserStreamBPS = 10_000_000
 	}
 	api := &API{
 		store: options.Store, cookieSecure: options.CookieSecure, sessionTTL: options.SessionTTL,
 		nodeAPIToken: options.NodeAPIToken,
 		relayToken:   options.RelayToken,
-		httpClient:   options.HTTPClient, bandwidth: bandwidth.NewManager(), now: options.Now,
+		httpClient:   options.HTTPClient, now: options.Now,
 		captchas: newCaptchaManager(options.Now), authGuard: newAuthGuard(options.Now),
 		passwordSlots:   make(chan struct{}, options.PasswordHashConcurrency),
-		streamGuard:     newStreamGuard(options.Now, options.UserMaxStreams, options.UserStreamRPM),
+		streamGuard:     newStreamGuard(options.Now, options.UserStreamRPM),
 		nodeCredentials: options.NodeCredentials,
 		nodeStates:      newNodeStateStore(),
 	}
-	api.userStreamBPS.Store(options.UserStreamBPS)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", api.health)
 	mux.HandleFunc("GET /api/v1/auth/captcha", api.captcha)
@@ -105,8 +92,6 @@ func New(options Options) http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/redeem-codes", api.createRedeemCodes)
 	mux.HandleFunc("GET /api/v1/admin/redeem-notice", api.getRedeemNotice)
 	mux.HandleFunc("PUT /api/v1/admin/redeem-notice", api.updateRedeemNotice)
-	mux.HandleFunc("GET /api/v1/admin/settings", api.getAdminSettings)
-	mux.HandleFunc("PUT /api/v1/admin/settings", api.updateAdminSettings)
 	api.registerCatalogRoutes(mux)
 	api.registerMediaRoutes(mux)
 	return securityHeaders(mux)

@@ -179,13 +179,6 @@ textarea { min-height: 140px; padding-top: 10px; padding-bottom: 10px; resize: v
 .node-list dl div { display: grid; gap: 4px; }
 .node-list dt { color: var(--muted); font-size: 11px; }
 .node-list dd { margin: 0; font-weight: 750; }
-.admin-settings { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 34px 56px; border-top: 1px solid var(--line); padding-top: 28px; }
-.admin-settings h2 { margin-top: 4px; font-size: 21px; }
-.admin-settings p, .settings-form small, .settings-readonly small { color: var(--muted); line-height: 1.65; }
-.settings-form { align-self: start; }
-.settings-readonly { display: grid; grid-column: 1 / -1; gap: 5px; border-top: 1px solid var(--line); padding-top: 20px; }
-.settings-readonly span { color: var(--muted); font-size: 12px; font-weight: 700; }
-.settings-readonly strong { font-size: 18px; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(37, 36, 34, 0.58); }
 .modal { width: min(440px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: 0 20px 70px rgba(37,36,34,0.16); }
@@ -256,7 +249,6 @@ textarea { min-height: 140px; padding-top: 10px; padding-bottom: 10px; resize: v
    .admin-code-search { min-width: 0; }
   .node-list article { grid-template-columns: 1fr auto; padding: 18px 0; }
   .node-list dl { grid-column: 1 / -1; }
-  .admin-settings { grid-template-columns: 1fr; gap: 26px; }
   .modal.wide { width: min(720px, 100%); }
   .mobile-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; min-height: calc(66px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); padding: 5px 6px env(safe-area-inset-bottom); background: rgba(255,255,255,.97); backdrop-filter: blur(14px); }
   .mobile-nav button { display: grid; place-items: center; align-content: center; gap: 3px; border: 0; background: transparent; color: var(--muted); font-size: 10px; }

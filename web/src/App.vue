@@ -3,14 +3,14 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CheckCircle2, Coins, Film, Home, KeyRound, Library, LogIn, LogOut, Minus, Play, Plus, RefreshCw, Search, Server, Shield, Ticket, User as UserIcon, Users } from '@lucide/vue'
 import { api, APIError, csrf, setCSRF } from './api'
 import { formatBytes, formatDate } from './format'
-import type { Account, AdminSettings, Commerce, NodeInfo, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry } from './types'
+import type { Account, Commerce, NodeInfo, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry } from './types'
 import AppModal from './components/AppModal.vue'
 import BrandLogo from './components/BrandLogo.vue'
 import VideoCard from './components/VideoCard.vue'
 import VideoPlayer from './components/VideoPlayer.vue'
 
 type View = 'home' | 'library' | 'account' | 'admin'
-type AdminTab = 'codes' | 'users' | 'nodes' | 'settings'
+type AdminTab = 'codes' | 'users' | 'nodes'
 
 const account = ref<Account | null>(null)
 const videos = ref<Video[]>([])
@@ -76,8 +76,6 @@ const creditDirection = ref<1 | -1>(1)
 const creditAmount = ref(1)
 const creditReason = ref('')
 const creditBusy = ref(false)
-const userStreamMbps = ref(10)
-const settingsSaving = ref(false)
 
 const sectionTitle = computed(() => {
   if (activeView.value === 'library') return '我的已购'
@@ -294,10 +292,6 @@ async function openAdmin(tab: AdminTab) {
   }
   if (tab === 'users') await loadUsers()
   if (tab === 'nodes') { const body = await api<{ nodes: NodeInfo[] }>('/api/v1/admin/nodes'); nodes.value = body.nodes ?? [] }
-  if (tab === 'settings') {
-    const body = await api<AdminSettings>('/api/v1/admin/settings')
-    userStreamMbps.value = body.user_stream_mbps || 10
-  }
 }
 async function loadUsers(reset = true) {
   const pageNumber = reset ? 1 : userPage.value + 1
@@ -347,14 +341,6 @@ async function saveRedeemNotice() {
     commerce.value.redeem_notice = body.content
     message.value = '兑换说明已保存。'
   } catch (caught) { error.value = errorMessage(caught) } finally { redeemNoticeSaving.value = false }
-}
-async function saveSettings() {
-  settingsSaving.value = true
-  try {
-    const body = await api<AdminSettings>('/api/v1/admin/settings', { method: 'PUT', body: JSON.stringify({ user_stream_mbps: userStreamMbps.value }) })
-    userStreamMbps.value = body.user_stream_mbps
-    message.value = '播放速率已保存。'
-  } catch (caught) { error.value = errorMessage(caught) } finally { settingsSaving.value = false }
 }
 async function toggleUser(user: Account) { await api(`/api/v1/admin/users/${user.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !user.enabled }) }); await loadUsers() }
 function openCreditAdjustment(user: Account, direction: 1 | -1) { creditTarget.value = user; creditDirection.value = direction; creditAmount.value = 1; creditReason.value = '' }
@@ -448,12 +434,11 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
 
         <section v-else class="admin-view">
           <header class="page-heading"><div><span>管理员</span><h1>管理后台</h1></div></header>
-          <nav class="admin-tabs"><button v-for="tab in ([['users','用户'],['codes','兑换码'],['nodes','节点'],['settings','设置']] as const)" :key="tab[0]" :class="{ active: adminTab === tab[0] }" @click="openAdmin(tab[0])">{{ tab[1] }}</button></nav>
+          <nav class="admin-tabs"><button v-for="tab in ([['users','用户'],['codes','兑换码'],['nodes','节点']] as const)" :key="tab[0]" :class="{ active: adminTab === tab[0] }" @click="openAdmin(tab[0])">{{ tab[1] }}</button></nav>
           <div v-if="adminTab === 'codes'" class="redeem-admin"><div class="redeem-admin-tools"><form class="admin-form" @submit.prevent="createCodes"><h2>生成兑换码</h2><label>每码鹿币<input v-model.number="codeForm.credits" type="number" min="1" required /></label><label>生成数量<input v-model.number="codeForm.count" type="number" min="1" max="1000" required /></label><button class="primary" type="submit"><Ticket :size="18" />生成并导出 TXT</button></form><form class="admin-form redeem-notice-editor" @submit.prevent="saveRedeemNotice"><h2>兑换获取说明</h2><p>这里的内容会显示在成员充值页面，可填写卡网购买、兑换和输入卡密的说明。</p><textarea v-model="redeemNoticeDraft" maxlength="2000" rows="7" placeholder="例如：请先在卡网兑换，再把得到的卡密粘贴到这里兑换鹿币。"></textarea><button class="secondary" type="submit" :disabled="redeemNoticeSaving">{{ redeemNoticeSaving ? '正在保存' : '保存说明' }}</button></form></div><section class="redeem-records"><header class="admin-section-heading"><div><span>兑换码记录</span><h2>全部兑换</h2></div><strong>{{ redeemTotal }} 条</strong></header><div class="redeem-record-toolbar"><div class="segmented-control"><button v-for="filter in ([['all','全部'],['unused','未使用'],['used','已使用']] as const)" :key="filter[0]" :class="{ active: redeemStatus === filter[0] }" type="button" @click="selectRedeemStatus(filter[0])">{{ filter[1] }} {{ redeemCounts[filter[0]] }}</button></div><form class="admin-code-search" @submit.prevent="submitRedeemSearch"><Search :size="18" /><input v-model="redeemSearch" aria-label="搜索完整卡密或使用者邮箱" placeholder="搜索完整卡密或使用者邮箱" /><button class="secondary" type="submit">搜索</button></form></div><div class="admin-table redeem-table"><div class="table-row redeem-code-row head"><span>编号</span><span>面值</span><span>状态</span><span>使用者</span><span>使用时间</span><span>创建时间</span></div><div v-for="code in redeemCodes" :key="code.id" class="table-row redeem-code-row"><strong>#{{ code.id }}</strong><span>{{ code.credits }} 鹿币</span><span><em :class="code.used ? 'used' : 'unused'">{{ code.used ? '已使用' : '未使用' }}</em></span><span>{{ code.redeemed_by_email || '—' }}</span><span>{{ code.redeemed_at ? formatDate(code.redeemed_at) : '—' }}</span><span>{{ formatDate(code.created_at) }}</span></div><p v-if="!redeemCodes.length" class="table-empty">没有符合条件的兑换码</p></div><div v-if="redeemCodes.length < redeemTotal" class="load-more-row"><button class="secondary" type="button" :disabled="redeemCodesLoadingMore" @click="loadMoreRedeemCodes"><RefreshCw v-if="redeemCodesLoadingMore" class="spin" :size="17" />{{ redeemCodesLoadingMore ? '正在加载' : '加载更多兑换码' }}</button></div></section></div>
           
           <template v-else-if="adminTab === 'users'"><div class="admin-user-heading"><div><span>成员管理</span><h2>用户账号</h2></div><strong><Users :size="17" />共 {{ userAllTotal }} 个账号</strong></div><form class="admin-user-toolbar" @submit.prevent="submitUserSearch"><Search :size="18" /><input v-model="userSearch" aria-label="搜索用户邮箱" placeholder="搜索用户邮箱" /><button class="secondary" type="submit">搜索</button></form><div class="admin-table"><div class="table-row user-admin head"><span>用户</span><span>鹿币</span><span>操作</span></div><div v-for="user in users" :key="user.id" class="table-row user-admin"><span>{{ user.email }}<small>{{ user.is_admin ? '管理员' : user.enabled ? '正常' : '已停用' }}</small></span><strong>{{ user.balance }}</strong><div class="row-actions"><button class="icon-button" type="button" title="增加鹿币" aria-label="增加鹿币" @click="openCreditAdjustment(user, 1)"><Plus :size="16" /></button><button class="icon-button" type="button" title="扣减鹿币" aria-label="扣减鹿币" @click="openCreditAdjustment(user, -1)"><Minus :size="16" /></button><button class="secondary" :disabled="user.id === account?.id" @click="toggleUser(user)">{{ user.enabled ? '停用' : '启用' }}</button><button class="icon-button" type="button" title="重置密码" aria-label="重置密码" @click="resetUser = user"><KeyRound :size="16" /></button></div></div></div><div v-if="users.length < userTotal" class="load-more-row"><button class="secondary" type="button" :disabled="usersLoadingMore" @click="loadMoreUsers"><RefreshCw v-if="usersLoadingMore" class="spin" :size="17" />{{ usersLoadingMore ? '正在加载' : '加载更多用户' }}</button></div></template>
           <div v-else-if="adminTab === 'nodes'" class="node-list"><article v-for="node in nodes" :key="node.id"><div><Server :size="22" /><span><strong>{{ node.name }}</strong><small>{{ node.online ? '在线' : '离线' }} · {{ scanStatus(node) }} · {{ formatDate(node.last_seen_at) }}</small><small v-if="node.scan_error" class="bad">{{ node.scan_error }}</small></span></div><dl><div><dt>总容量</dt><dd>{{ formatBytes(node.total_bytes) }}</dd></div><div><dt>可用容量</dt><dd>{{ formatBytes(node.available_bytes) }}</dd></div></dl><button class="secondary" :disabled="!node.online || node.scan_status === 'scanning'" @click="rescan(node)"><RefreshCw :size="17" />重新扫描</button></article></div>
-          <section v-else class="admin-settings"><div><span>系统设置</span><h2>播放速率</h2><p>所有账号的播放连接共享此速率，保存后新的视频流会立即使用新值。</p></div><form class="admin-form settings-form" @submit.prevent="saveSettings"><label>单用户播放速率（Mbps）<input v-model.number="userStreamMbps" type="number" min="1" max="1000" step="1" required /></label><small>当前范围为 1 到 1000 Mbps。</small><button class="primary" type="submit" :disabled="settingsSaving">{{ settingsSaving ? '正在保存' : '保存设置' }}</button></form><div class="settings-readonly"><span>节点带宽</span><strong>不设上限</strong><small>节点按实际网络、磁盘和连接上限提供速度。</small></div></section>
         </section>
       </main>
 

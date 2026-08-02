@@ -61,7 +61,6 @@ services:
       DEER_MEDIA_ROOT: /media
       DEER_POSTER_ROOT: /app/posters
       DEER_SCAN_INTERVAL: ${DEER_SCAN_INTERVAL:-10m}
-      DEER_NODE_MAX_STREAMS: ${DEER_NODE_MAX_STREAMS:-64}
     volumes:
       - ${DEER_MEDIA_HOST_PATH}:/media:ro
       - ./posters:/app/posters

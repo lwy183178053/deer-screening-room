@@ -29,9 +29,7 @@ services:
       DEER_BOOTSTRAP_PASSWORD: ${DEER_BOOTSTRAP_PASSWORD:-deerroom-admin-password}
       DEER_NODE_API_TOKEN: ${DEER_NODE_API_TOKEN:-local-node-api-token-change-me}
       DEER_RELAY_TOKEN: ${DEER_RELAY_TOKEN:-local-relay-token-change-me}
-      DEER_USER_STREAM_BPS: ${DEER_USER_STREAM_BPS:-10000000}
       DEER_PASSWORD_HASH_CONCURRENCY: ${DEER_PASSWORD_HASH_CONCURRENCY:-4}
-      DEER_USER_MAX_STREAMS: ${DEER_USER_MAX_STREAMS:-4}
       DEER_USER_STREAM_REQUESTS_PER_MINUTE: ${DEER_USER_STREAM_REQUESTS_PER_MINUTE:-120}
     depends_on:
       postgres:
@@ -63,7 +61,6 @@ services:
       DEER_MEDIA_ROOT: /media
       DEER_POSTER_ROOT: /app/posters
       DEER_SCAN_INTERVAL: 10m
-      DEER_NODE_MAX_STREAMS: ${DEER_NODE_MAX_STREAMS:-64}
     volumes:
       - ${DEER_MEDIA_HOST_PATH:-E:/BaiduNetdiskDownload}:/media:ro
       - poster-data:/app/posters

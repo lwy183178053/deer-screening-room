@@ -11,3 +11,5 @@ docker compose exec -T postgres pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -F
 监控重点：Gateway `/api/v1/health`、Caddy HTTPS、节点最后心跳与扫描状态、磁盘余量、兑换码异常、管理员调账审计和当前播放数。节点超过 90 秒没有心跳即视为离线并从公开目录隐藏。Gateway 每小时清理过期登录会话和播放会话。
 
 升级前先备份数据库，再执行 `docker compose build` 和 `docker compose up -d`。数据库迁移在 Gateway 启动时按顺序执行；失败时 Gateway 不启动。
+
+Windows 媒体迁移使用 `scripts\transcode-av1-720p.ps1`。Sample 模式只生成样本；Full/New 模式会创建 `.deer-media-maintenance.lock`，暂停当前小鹿 media-node，逐个用 `av1_nvenc` 编码并通过 `ffprobe` 与完整解码校验，成功后才原子替换和删除原片，最后重建硬链接视图并恢复 media-node。脚本失败时保留失败文件的原片；不要在 Full 模式运行期间手动删除维护锁或媒体文件。节点扫描器在命中旧缓存时也会重新计算 AV1/AAC 的播放兼容性，避免编码迁移后沿用旧的 `unsupported` 标记。

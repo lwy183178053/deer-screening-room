@@ -23,4 +23,13 @@ To process another directory:
 
 If an archive fails its password/integrity test or extraction, it is kept and the script continues with the remaining archives. A failed direct extraction may leave partial files beside the retained archive; rerun it after fixing the problem.
 
-After adding videos on Windows, keep `scripts\watch-media-view.cmd` running when the Docker media node uses the compatibility view. It updates short hard links automatically while preserving the original titles in the node catalog.
+After adding videos on Windows, the extraction script runs `scripts\transcode-av1-720p.ps1 -Mode New` after the complete archive batch succeeds. It pauses only the media-node service, validates each AV1 output, replaces the source file, and rebuilds the compatibility view. A failed conversion keeps the source file and stops that conversion batch.
+
+The conversion script supports a non-destructive sample run and the full migration:
+
+```powershell
+.\scripts\transcode-av1-720p.ps1 -Mode Sample
+.\scripts\transcode-av1-720p.ps1 -Mode Full
+```
+
+Sample output is written to `E:\BaiduNetdiskDownload.av1-samples`; it never changes source media. Full/New mode requires FFmpeg with `av1_nvenc` and `ffprobe` on `PATH`, and uses AAC-LC 48 kHz stereo at 128 kbps. Keep `scripts\watch-media-view.cmd` running normally; it pauses while `.deer-media-maintenance.lock` exists and resumes after the view is rebuilt.

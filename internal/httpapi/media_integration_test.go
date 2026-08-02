@@ -77,7 +77,7 @@ func TestPlaybackProxyIntegration(t *testing.T) {
 	if _, err := db.UnlockVideo(ctx, user.ID, videos[0].ID, "HTTP-UNLOCK", now); err != nil {
 		t.Fatal(err)
 	}
-	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", UserStreamBPS: 4_000_000, Now: func() time.Time { return now }})
+	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", Now: func() time.Time { return now }})
 	create := httptest.NewRequest(http.MethodPost, "/api/v1/videos/1/playback", bytes.NewReader([]byte(`{}`)))
 	create.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
 	create.Header.Set("X-CSRF-Token", "csrf")
@@ -138,7 +138,7 @@ func TestAdminUserCreditsIntegration(t *testing.T) {
 	if err := db.CreateSession(ctx, tokenHash[:], admin.ID, "csrf", now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", UserStreamBPS: 4_000_000, Now: func() time.Time { return now }})
+	handler := New(Options{Store: db, NodeAPIToken: "node-token", RelayToken: "relay-token", Now: func() time.Time { return now }})
 
 	search := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users?q=VIEWER", nil)
 	search.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
@@ -183,6 +183,8 @@ func TestAdminUserCreditsIntegration(t *testing.T) {
 		{http.MethodGet, "/api/v1/admin/videos"},
 		{http.MethodGet, "/api/v1/admin/orders"},
 		{http.MethodPost, "/api/v1/payments/zpay/orders"},
+		{http.MethodGet, "/api/v1/admin/settings"},
+		{http.MethodPut, "/api/v1/admin/settings"},
 	}
 	for _, route := range removedRoutes {
 		request := httptest.NewRequest(route.method, route.path, nil)

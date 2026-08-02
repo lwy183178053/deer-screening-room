@@ -1,6 +1,8 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$ArchiveRoot = 'E:\BaiduNetdiskDownload\悠米'
+    [string]$ArchiveRoot = 'E:\BaiduNetdiskDownload\悠米',
+    [string]$SourceRoot = 'E:\BaiduNetdiskDownload',
+    [switch]$SkipTranscode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -91,6 +93,15 @@ foreach ($archive in $archives) {
 
 if ($failed -gt 0) {
     throw "$failed archive(s) failed. Failed archives were not deleted."
+}
+
+if (-not $SkipTranscode) {
+    $transcodeScript = Join-Path $PSScriptRoot 'transcode-av1-720p.ps1'
+    Write-Host 'All archives succeeded. Converting new MP4 files to AV1 720p.'
+    & $transcodeScript -Mode New -SourceRoot $SourceRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Archive extraction succeeded, but AV1 conversion failed.'
+    }
 }
 
 Write-Host 'All archives were extracted successfully and deleted.' -ForegroundColor Green

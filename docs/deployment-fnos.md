@@ -82,4 +82,4 @@ docker compose logs -f wireguard media-node
 
 ## 4. Bandwidth
 
-节点不再设置总带宽令牌桶，媒体节点会按实际网络和磁盘能力发送数据；仍保留 `DEER_NODE_MAX_STREAMS` 并发连接上限。单账号播放速率由管理员后台“设置”保存，初始为 10 Mbps。
+媒体节点和 Gateway 不再设置视频传输带宽或媒体连接数量上限，数据按实际网络、磁盘和 WireGuard 能力发送。Gateway 仍保留账号级播放请求频率保护，避免异常的 Range 请求洪泛；管理员后台不再提供播放速率设置。

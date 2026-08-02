@@ -52,7 +52,6 @@ export type Commerce = {
 
 export type WalletEntry = { id: number; delta: number; kind: string; description: string; created_at: string }
 export type NodeInfo = { id: number; name: string; online: boolean; total_bytes: number; available_bytes: number; last_seen_at?: string; scan_status: 'unknown' | 'pending' | 'scanning' | 'ok' | 'error'; last_scan_at?: string; scan_error?: string }
-export type AdminSettings = { user_stream_bps: number; user_stream_mbps: number }
 export type RedeemCode = { id: number; credits: number; used: boolean; redeemed_by_email?: string; redeemed_at?: string; created_at: string }
 export type RedeemCodeCounts = { all: number; used: number; unused: number }
 export type RedeemCodePage = { codes: RedeemCode[]; page: number; page_size: number; total: number; counts: RedeemCodeCounts }

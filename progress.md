@@ -822,3 +822,74 @@
 - `/opt/deer-screening-room/releases/deerroom-f0cc94c.tar.gz`：本次部署归档；云端 coturn 容器已停止并移除，旧镜像/卷未做破坏性清理。
 - `deploy/media-node/.env`：仅本机忽略运行配置补充已有 Relay Token 和 `DEER_VERSION=f0cc94c`，未写入 Git。
 - 回滚方式：恢复 `/opt/deer-screening-room/app.webrtc-pre-range-*` 与对应备份的云端运行配置，使用旧 Compose 重新构建 Gateway/Web；本机仅恢复 media-node，PostgreSQL、WireGuard、宿主机 Caddy和其他业务不动。
+
+## 2026-08-02 - Task: 清理本地与线上历史部署残留
+### What was done
+- 删除本地旧 Range 部署归档、旧 WebRTC 节点运行配置备份，以及本地生产构建和 Playwright 生成物；保留当前依赖缓存、媒体封面缓存、目录缓存和当前 WireGuard 运行配置。
+- 仅在 104 的 `/opt/deer-screening-room` 内删除旧 WebRTC 代码副本、旧 WebRTC 备份、旧部署归档、重复解包发布目录和未使用 coturn 镜像；保留当前 Range 应用、当前镜像、当前发布包、Range 部署检查备份、PostgreSQL 数据卷、WireGuard 和宿主机 Caddy 配置。
+- 未操作其他业务容器、其他业务 Caddy 备份、原始视频目录或媒体兼容视图。
+
+### Testing
+- 本地工作区状态干净；旧归档、旧 WireGuard 运行备份、`web/dist`、`web/test-results` 和 `web/playwright-report` 均已移除。
+- 104 上小鹿 Gateway/Web/WireGuard/PostgreSQL 仍运行；ModelRoute、Sub2API 等其他容器状态未变化。
+- `http://127.0.0.1:28200/api/v1/health` 和 `https://xiaolu.lwylink.xyz/api/v1/health` 均返回 `status=ok`。
+- 104 上仅保留 `deerroom-app:f0cc94c`、`deerroom-web:f0cc94c` 两个小鹿镜像；当前发布包仍位于 `/opt/deer-screening-room/releases/deerroom-f0cc94c.tar.gz`。
+
+### Notes
+- `deerroom-f0cc94c.tar.gz`：删除本地旧部署归档；需要时可由当前提交重新生成 `git archive` 发布包。
+- `deploy/media-node/wireguard/runtime-backups/.env.pre-webrtc-20260802-0344`：删除旧 WebRTC 节点配置备份；当前节点运行配置未改动。
+- `web/dist`、`web/test-results`、`web/playwright-report`：删除本地生成物；依赖缓存 `web/node_modules` 保留供后续验证使用。
+- `/opt/deer-screening-room/app.pre-webrtc-*`、`app.webrtc-pre-range-*`、`backups/webrtc-*`、`deerroom-98d4757.tar`、旧 `releases` 解包目录和未使用 coturn 镜像：已在 104 清理。
+- 回滚方式：代码回滚使用当前提交重新生成发布包并仅重建 `deer-screening-room-cloud` 的 Gateway/Web；数据库、WireGuard、宿主机 Caddy和其他业务容器保持不动。当前发布包 `/opt/deer-screening-room/releases/deerroom-f0cc94c.tar.gz` 为线上代码回滚点。
+
+## 2026-08-02 - Task: 完成 AV1 720p 全量媒体迁移
+### What was done
+- 使用 RTX NVENC `av1_nvenc`、CQ 30/P5 将 79 个 MP4 逐个转换为最长边 1280 的 AV1 MP4，音频统一为 AAC-LC、48 kHz、双声道、128 kbps，并启用 `+faststart`。
+- 每个目标文件均通过 ffprobe 属性检查和完整 FFmpeg 解码后才原子替换并删除对应 H.264 原片；全量完成后重建 79 个硬链接兼容视图。
+- 新增 Sample/Full/New 转码流程和维护锁，7z 批量解压成功后自动触发 New；媒体扫描器支持 AV1/AAC，并在缓存命中时刷新旧兼容性标记。
+- 重建并启动本地 `deer-screening-room-media-1` media-node；云端目录恢复 79 条可用视频，公网 Range 播放继续工作。
+
+### Testing
+- 全量媒体审计：79/79 为 AV1 MP4，最长边不超过 1280，音频均为 AAC 双声道 48 kHz、约 126-130 kbps；无 `.av1.tmp.mp4`、`.av1-original.tmp` 或维护锁残留。
+- 媒体总量由约 82.81 GiB 降至 37.33 GiB，累计时长约 43.78 小时；本轮源目录和兼容视图均为 79 个文件，源目录无竖屏素材。
+- 管理员真实登录后创建播放会话，首段 Range 返回 `206`、读取 1024 字节，`Content-Range: bytes 0-1023/454416193`，内容类型为 `video/mp4`。
+- WireGuard 最新握手正常，云端公开目录返回 `total=79`，首条视频为 `ready`/`av1`/`available=true`。
+- `go test ./...`、`go test -race ./...`、`go vet ./...`、前端单测、生产构建、11 项 Playwright、PowerShell 语法检查、媒体 Compose 配置检查和 `git diff --check` 均通过。
+
+### Notes
+- `scripts/transcode-av1-720p.ps1`：新增样本、全量和新增媒体转码及逐文件验证替换流程。
+- `scripts/extract-7z-and-delete.ps1`：整批解压成功后自动调用新增媒体转码流程。
+- `scripts/watch-media-view.ps1`：维护锁期间暂停兼容视图监听。
+- `internal/media/scanner.go`、`internal/media/scanner_test.go`：支持 AV1/AAC，并覆盖旧缓存兼容性刷新回归。
+- `docs/media-library.md`、`docs/local-archive-extraction.md`、`docs/operations.md`：记录 AV1 媒体格式、自动转码、维护锁和运维流程。
+- 原始 H.264 文件已按用户确认的计划删除；代码可通过 Git 回滚，已删除媒体只能从独立外部备份恢复，不能由代码提交反向生成原片。
+
+## 2026-08-02 - Task: 移除播放限速并部署到 104
+### What was done
+- Gateway 视频流改为不使用带宽令牌桶，媒体节点移除并发播放槽位；保留账号级播放请求频率保护（默认每分钟 120 次）。
+- 管理后台移除播放限速设置入口及对应接口，生产环境删除旧限速变量；数据库仅保留兑换说明相关设置。
+- 将当前工作区发布包上传到 104 的独立发布目录，仅重建小鹿 Gateway/Web；PostgreSQL、WireGuard、宿主机 Caddy、ModelRoute 和 Sub2API 未操作。
+
+### Testing
+- `go test ./...`、`go vet ./...`、前端生产构建和 `git diff --check`：通过。
+- 104 本地与公网 `/api/v1/health`：均返回 200；`/api/v1/admin/settings`：返回 404。
+- 线上目录返回 79 条视频，首条为 AV1/AAC、1280x720、`available=true`；Range 请求返回 `206`，`Content-Range: bytes 0-1023/454416193`。
+- 线上 16 MiB Range 实测 `858145 B/s`（约 6.9 Mbps）；部署前同口径约 5.1 Mbps。
+- 104 与 Windows 媒体节点 WireGuard 最新握手正常；旧业务容器运行时长和状态保持不变。
+
+### Notes
+- `internal/bandwidth/manager.go`、`internal/httpapi/settings.go`：删除已停用的带宽管理和管理设置接口；其余 Gateway/节点/前端/Compose/文档改动同步完成。
+- `/opt/deer-screening-room/app.limit-removal-20260802-1`：本次线上发布目录；镜像标签为 `limit-removal-20260802`。
+- `/opt/deer-screening-room/backups/.env.before-limit-removal-20260802`：部署前运行配置备份，不含在本地发布包中。
+- 回滚方式：在 104 执行 `cd /opt/deer-screening-room/app && docker compose -p deer-screening-room-cloud -f deploy/cloud/compose.yaml -f deploy/cloud/compose.host-caddy.yaml up -d --no-build --no-deps gateway web`，仅恢复小鹿 Gateway/Web，不停止 PostgreSQL、WireGuard 或其他业务容器。
+
+## 2026-08-02 - Task: 固定线上发布默认镜像标签
+### What was done
+- 将 104 本次发布目录的默认 `DEER_VERSION` 固定为 `limit-removal-20260802`，后续从该目录执行 Compose 重启时仍使用已验证的新 Gateway/Web 镜像。
+
+### Testing
+- Compose 配置解析出的 Gateway/Web 镜像均为 `limit-removal-20260802`；未触发容器重启。
+
+### Notes
+- `/opt/deer-screening-room/app.limit-removal-20260802-1/deploy/cloud/.env`：固定本次发布的默认镜像标签。
+- 回滚点不变：使用 `/opt/deer-screening-room/app` 的旧 Range 代码和 `--no-build --no-deps gateway web` 恢复 Gateway/Web。

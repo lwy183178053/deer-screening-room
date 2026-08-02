@@ -31,11 +31,8 @@ type Config struct {
 	NodePublicURL     string
 	GatewayURL        string
 	ScanInterval      time.Duration
-	UserStreamBPS     int64
 	PasswordHashJobs  int
-	UserMaxStreams    int
 	UserStreamRPM     int
-	NodeMaxStreams    int
 	NodeCredentials   map[string]NodeCredential
 }
 
@@ -60,11 +57,8 @@ func Load() (Config, error) {
 		NodePublicURL:     strings.TrimRight(value("DEER_NODE_PUBLIC_URL", "http://media-node:8081"), "/"),
 		GatewayURL:        strings.TrimRight(value("DEER_GATEWAY_URL", "http://gateway:8080"), "/"),
 		ScanInterval:      duration("DEER_SCAN_INTERVAL", 10*time.Minute),
-		UserStreamBPS:     integer("DEER_USER_STREAM_BPS", 10_000_000),
 		PasswordHashJobs:  int(integer("DEER_PASSWORD_HASH_CONCURRENCY", 4)),
-		UserMaxStreams:    int(integer("DEER_USER_MAX_STREAMS", 4)),
 		UserStreamRPM:     int(integer("DEER_USER_STREAM_REQUESTS_PER_MINUTE", 120)),
-		NodeMaxStreams:    int(integer("DEER_NODE_MAX_STREAMS", 64)),
 		NodeCredentials:   nodeCredentials,
 	}
 	if cfg.Role == "gateway" && cfg.DatabaseURL == "" {

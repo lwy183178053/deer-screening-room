@@ -114,6 +114,7 @@ func (s *Scanner) Scan() ([]Item, error) {
 			if manifestTitle := s.titles[rel]; manifestTitle != "" {
 				cached.Title = manifestTitle
 			}
+			cached.Compatibility = mediaCompatibility(ext, cached.VideoCodec, cached.AudioCodec)
 			nextCache[key] = cached
 			return nil
 		}
@@ -130,10 +131,7 @@ func (s *Scanner) Scan() ([]Item, error) {
 		if manifestTitle := s.titles[rel]; manifestTitle != "" {
 			title = manifestTitle
 		}
-		compatibility := "unsupported"
-		if (ext == ".mp4" || ext == ".m4v" || ext == ".mov") && probed.VideoCodec == "h264" && (probed.AudioCodec == "" || probed.AudioCodec == "aac") {
-			compatibility = "ready"
-		}
+		compatibility := mediaCompatibility(ext, probed.VideoCodec, probed.AudioCodec)
 		posterKey := ""
 		posterPath := filepath.Join(s.posterRoot, key+".jpg")
 		if _, err := os.Stat(posterPath); err == nil {
@@ -160,6 +158,13 @@ func (s *Scanner) Scan() ([]Item, error) {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].MediaKey < items[j].MediaKey })
 	return items, nil
+}
+
+func mediaCompatibility(ext, videoCodec, audioCodec string) string {
+	if (ext == ".mp4" || ext == ".m4v" || ext == ".mov") && (videoCodec == "h264" || videoCodec == "av1") && (audioCodec == "" || audioCodec == "aac") {
+		return "ready"
+	}
+	return "unsupported"
 }
 
 func (s *Scanner) ScanWithRevision() ([]Item, string, error) {

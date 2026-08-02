@@ -25,7 +25,6 @@ const videos = Array.from({ length: 8 }, (_, index) => ({
 async function mockAPI(page: Page, admin = false) {
   const videoRequests: string[] = []
   let loginAttempts = 0
-  let userStreamMbps = 10
   const adminAccount = { id: 1, email: '3180615598@qq.com', is_admin: true, enabled: true, balance: 128, created_at: '2026-07-31T00:00:00Z' }
   const viewer = { id: 2, email: 'viewer@example.com', is_admin: false, enabled: true, balance: 20, created_at: '2026-07-31T00:00:00Z' }
   const redeemCodeRows = [
@@ -82,10 +81,6 @@ async function mockAPI(page: Page, admin = false) {
       body = { codes, page: 1, page_size: 20, total: codes.length, counts: { all: 2, unused: 1, used: 1 } }
     }
     else if (url.pathname === '/api/v1/admin/nodes' && route.request().method() === 'GET') body = { nodes: [{ id: 1, name: 'fnos-media', online: true, total_bytes: 1_000_000, available_bytes: 500_000, last_seen_at: '2026-07-31T00:00:00Z', scan_status: 'ok', last_scan_at: '2026-07-31T00:00:00Z' }] }
-    else if (url.pathname === '/api/v1/admin/settings') {
-      if (route.request().method() === 'PUT') userStreamMbps = (route.request().postDataJSON() as { user_stream_mbps: number }).user_stream_mbps
-      body = { user_stream_bps: userStreamMbps * 1_000_000, user_stream_mbps: userStreamMbps }
-    }
     else if (url.pathname === '/api/v1/admin/users' && route.request().method() === 'GET') body = { users: url.searchParams.get('q') ? [viewer] : [adminAccount, viewer], page: 1, page_size: 20, total: url.searchParams.get('q') ? 1 : 2, all_total: 2 }
     else if (/\/api\/v1\/admin\/users\/\d+\/credits$/.test(url.pathname)) {
       const input = route.request().postDataJSON() as { delta: number }
@@ -171,7 +166,7 @@ test('administrator defaults to users and manages individual redeem codes', asyn
   await page.getByRole('button', { name: /管理/ }).first().click()
   await expect(page.getByRole('heading', { name: '用户账号' })).toBeVisible()
   await expect(page.getByText('共 2 个账号')).toBeVisible()
-  await expect(page.locator('.admin-tabs button')).toHaveCount(4)
+  await expect(page.locator('.admin-tabs button')).toHaveCount(3)
   await expect(page.getByRole('button', { name: '概览', exact: true })).toHaveCount(0)
   await page.getByLabel('搜索用户邮箱').fill('viewer')
   await page.getByRole('button', { name: '搜索', exact: true }).last().click()
@@ -196,13 +191,7 @@ test('administrator defaults to users and manages individual redeem codes', asyn
   await expect(page.getByRole('heading', { name: '兑换获取说明' })).toBeVisible()
   await page.locator('textarea').fill('新的卡网兑换说明')
   await page.getByRole('button', { name: '保存说明' }).click()
-  await page.getByRole('button', { name: '设置', exact: true }).click()
-  await expect(page.getByText(/节点直连|P2P|WebRTC/i)).toHaveCount(0)
-  await expect(page.getByLabel('单用户播放速率（Mbps）')).toHaveValue('10')
-  await page.getByLabel('单用户播放速率（Mbps）').fill('12')
-  await page.getByRole('button', { name: '保存设置' }).click()
-  await expect(page.getByText('播放速率已保存。')).toBeVisible()
-  await expect(page.getByText('不设上限')).toBeVisible()
+  await expect(page.getByRole('button', { name: '设置', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '视频', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '订单', exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
