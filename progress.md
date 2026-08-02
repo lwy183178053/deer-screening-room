@@ -893,3 +893,40 @@
 ### Notes
 - `/opt/deer-screening-room/app.limit-removal-20260802-1/deploy/cloud/.env`：固定本次发布的默认镜像标签。
 - 回滚点不变：使用 `/opt/deer-screening-room/app` 的旧 Range 代码和 `--no-build --no-deps gateway web` 恢复 Gateway/Web。
+
+## 2026-08-02 - Task: 修复移动端切后台后的 Range 播放恢复
+### What was done
+- 停止 Artplayer 在页面后台期间自动消耗五次重连额度，改由页面恢复可见时对仍在播放的视频执行一次受控 Range 重载和播放恢复。
+- 恢复流程清理播放器错误状态，并在组件卸载时移除 `visibilitychange` 监听；用户主动暂停的视频不会在回到前台后被自动启动。
+- 增加播放器组件回归测试和测试文档说明。
+
+### Testing
+- `npm.cmd run test -- --run src/components/VideoPlayer.test.ts`：2 项通过，覆盖后台恢复和卸载后不再响应。
+- `npm.cmd run test -- --run`：3 个测试文件、6 项通过。
+- `npm.cmd run build`：Vue 类型检查和 Vite 生产构建通过。
+- `git diff --check`：通过。
+
+### Notes
+- `web/src/components/VideoPlayer.vue`：增加移动端页面可见性恢复、错误状态清理和受控播放重载。
+- `web/src/components/VideoPlayer.test.ts`：新增 Artplayer mock 与后台恢复回归测试。
+- `docs/testing.md`：记录后台恢复测试边界。
+- `progress.md`：追加本轮修复和验证证据。
+- 回滚方式：恢复上述三个代码/文档文件到本轮前版本；不涉及 Gateway、媒体节点、数据库或其他业务容器。
+
+## 2026-08-02 - Task: 部署移动端后台恢复修复
+### What was done
+- 将本轮 Range 播放恢复修复打包上传到 104 的独立发布目录，仅重建 `deer-screening-room-cloud` 的 Web 容器。
+- 新 Web 镜像使用 `range-resume-20260802` 标签并切换到 `/opt/deer-screening-room/app.range-resume-20260802-2`；运行配置权限保持受限，未进入发布包或日志。
+- Gateway、PostgreSQL、WireGuard、宿主机 Caddy 及 ModelRoute/Sub2API 等其他业务未重启或修改。
+
+### Testing
+- 远端 Compose 配置校验和 Web Docker 构建通过，镜像内 Vue 生产构建通过。
+- Web 容器已运行且公网 `https://xiaolu.lwylink.xyz/` 返回 `200`，`/api/v1/health` 返回 `200`，HTTP 自动跳转返回 `308`。
+- 回环健康接口返回 `status=ok`；宿主机 Caddy 保持 `active`，`28200` 仍为 Web 回环监听。
+- 部署前后 Gateway、PostgreSQL、WireGuard、ModelRoute 和 Sub2API 容器 ID/运行状态保持不变；公网 HTML 已引用新资源 `assets/index-Ce9j1pRK.js`。
+
+### Notes
+- `/opt/deer-screening-room/releases/deerroom-range-resume-20260802.zip`：本轮源码发布包，不含运行密钥。
+- `/opt/deer-screening-room/app.range-resume-20260802-2`：线上新 Web 发布目录。
+- `progress.md`：追加生产部署证据和回滚点。
+- 回滚方式：在 104 使用旧发布目录 `/opt/deer-screening-room/app.limit-removal-20260802-1` 的 Compose 配置执行 `docker compose -p deer-screening-room-cloud -f deploy/cloud/compose.yaml -f deploy/cloud/compose.host-caddy.yaml up -d --no-build --no-deps web`，仅恢复 Web 容器；Gateway、数据库、WireGuard 和其他业务不动。
