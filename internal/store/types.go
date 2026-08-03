@@ -85,6 +85,8 @@ type Node struct {
 	Online           bool       `json:"online"`
 	TotalBytes       int64      `json:"total_bytes"`
 	AvailableBytes   int64      `json:"available_bytes"`
+	StudioCount      int64      `json:"studio_count"`
+	VideoCount       int64      `json:"video_count"`
 	LastSeenAt       *time.Time `json:"last_seen_at,omitempty"`
 }
 

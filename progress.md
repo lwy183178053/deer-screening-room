@@ -1167,3 +1167,26 @@
 - `internal/auth`、`internal/bandwidth`、`internal/zpay`：删除空目录，不包含可执行代码。
 - `progress.md`：记录清理范围和验证结果。
 - 回滚方式：现行封面缺失时执行管理员重新扫描，节点会按现有扫描逻辑重新生成；本轮未改变视频、数据库或播放逻辑。
+
+## 2026-08-03 - Task: 管理节点显示工作室与视频统计
+### What was done
+- 管理节点接口现在返回每个节点当前可用且已发布的视频数量，以及这些视频所属的已发布工作室数量。
+- 节点卡片新增工作室、视频、总容量和可用容量四项统计；移动端在窄屏下保持两列布局。
+- 补充节点统计查询的集成测试，并同步更新管理员 API 文档。
+
+### Testing
+- `go test ./...`：通过。
+- `go test -race ./...`：通过。
+- `go vet ./...`：通过。
+- `web`: `npm.cmd run test -- --run`（3 个测试文件、6 项通过）和 `npm.cmd run build`：通过。
+- 根 Compose、云端 Compose、宿主 Caddy 组合覆盖、Windows 节点、registry 节点和绿联节点 Compose `config --quiet`：通过；宿主 Caddy 覆盖按与基础云端 Compose 组合方式检查。
+- `git diff --check`：通过。
+- 公网健康接口返回 `200`，公开目录返回 AV1/AAC、1280×720 且 `ready` 的视频；未使用管理员会话直接读取节点明细，因此 NAS 节点的实时计数仍需在管理页刷新确认。
+
+### Notes
+- `internal/store/types.go`、`internal/store/catalog.go`：增加节点统计字段并从现有目录表聚合查询。
+- `internal/store/postgres_integration_test.go`：覆盖可用/已发布视频和不兼容视频的统计口径，并校验 `ListNodes`、`NodeByID`。
+- `web/src/types.ts`、`web/src/App.vue`、`web/src/styles.css`：展示节点工作室/视频数量并适配移动端两列布局。
+- `docs/api.md`：记录节点统计字段。
+- `progress.md`：追加本轮实施与验证记录。
+- 回滚点：回退本轮提交即可移除统计字段和卡片展示；数据库表、视频文件、节点凭据和播放逻辑均未改变。

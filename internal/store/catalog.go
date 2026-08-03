@@ -202,7 +202,22 @@ func (s *Postgres) PlaybackVideo(ctx context.Context, playbackID string, userID 
 }
 
 func (s *Postgres) ListNodes(ctx context.Context, now time.Time) ([]Node, error) {
-	rows, err := s.pool.Query(ctx, `SELECT n.id,n.name,n.base_url,COALESCE(p.wireguard_address::text,''),p.node_id IS NOT NULL,COALESCE(p.revoked_at IS NOT NULL,false),COALESCE(p.bundle_downloaded_at IS NOT NULL,false),n.online AND COALESCE(n.last_seen_at>$1,false),n.total_bytes,n.available_bytes,n.last_seen_at FROM media_nodes n LEFT JOIN media_node_provisioning p ON p.node_id=n.id ORDER BY n.name`, now.Add(-90*time.Second))
+	rows, err := s.pool.Query(ctx, `
+		SELECT n.id,n.name,n.base_url,COALESCE(p.wireguard_address::text,''),p.node_id IS NOT NULL,
+			COALESCE(p.revoked_at IS NOT NULL,false),COALESCE(p.bundle_downloaded_at IS NOT NULL,false),
+			n.online AND COALESCE(n.last_seen_at>$1,false),n.total_bytes,n.available_bytes,
+			COALESCE(c.studio_count,0),COALESCE(c.video_count,0),n.last_seen_at
+		FROM media_nodes n
+		LEFT JOIN media_node_provisioning p ON p.node_id=n.id
+		LEFT JOIN (
+			SELECT v.node_id,
+				COUNT(DISTINCT s.id) FILTER (WHERE s.published AND v.published AND v.available) AS studio_count,
+				COUNT(v.id) FILTER (WHERE v.published AND v.available) AS video_count
+			FROM videos v
+			JOIN studios s ON s.id=v.studio_id
+			GROUP BY v.node_id
+		) c ON c.node_id=n.id
+		ORDER BY n.name`, now.Add(-90*time.Second))
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +225,7 @@ func (s *Postgres) ListNodes(ctx context.Context, now time.Time) ([]Node, error)
 	result := []Node{}
 	for rows.Next() {
 		var item Node
-		if err := rows.Scan(&item.ID, &item.Name, &item.BaseURL, &item.WireGuardAddress, &item.Provisioned, &item.Revoked, &item.BundleDownloaded, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.LastSeenAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.BaseURL, &item.WireGuardAddress, &item.Provisioned, &item.Revoked, &item.BundleDownloaded, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.StudioCount, &item.VideoCount, &item.LastSeenAt); err != nil {
 			return nil, err
 		}
 		result = append(result, item)
@@ -220,7 +235,22 @@ func (s *Postgres) ListNodes(ctx context.Context, now time.Time) ([]Node, error)
 
 func (s *Postgres) NodeByID(ctx context.Context, id int64, now time.Time) (Node, error) {
 	var item Node
-	err := s.pool.QueryRow(ctx, `SELECT n.id,n.name,n.base_url,COALESCE(p.wireguard_address::text,''),p.node_id IS NOT NULL,COALESCE(p.revoked_at IS NOT NULL,false),COALESCE(p.bundle_downloaded_at IS NOT NULL,false),n.online AND COALESCE(n.last_seen_at>$2,false),n.total_bytes,n.available_bytes,n.last_seen_at FROM media_nodes n LEFT JOIN media_node_provisioning p ON p.node_id=n.id WHERE n.id=$1`, id, now.Add(-90*time.Second)).Scan(&item.ID, &item.Name, &item.BaseURL, &item.WireGuardAddress, &item.Provisioned, &item.Revoked, &item.BundleDownloaded, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.LastSeenAt)
+	err := s.pool.QueryRow(ctx, `
+		SELECT n.id,n.name,n.base_url,COALESCE(p.wireguard_address::text,''),p.node_id IS NOT NULL,
+			COALESCE(p.revoked_at IS NOT NULL,false),COALESCE(p.bundle_downloaded_at IS NOT NULL,false),
+			n.online AND COALESCE(n.last_seen_at>$2,false),n.total_bytes,n.available_bytes,
+			COALESCE(c.studio_count,0),COALESCE(c.video_count,0),n.last_seen_at
+		FROM media_nodes n
+		LEFT JOIN media_node_provisioning p ON p.node_id=n.id
+		LEFT JOIN (
+			SELECT v.node_id,
+				COUNT(DISTINCT s.id) FILTER (WHERE s.published AND v.published AND v.available) AS studio_count,
+				COUNT(v.id) FILTER (WHERE v.published AND v.available) AS video_count
+			FROM videos v
+			JOIN studios s ON s.id=v.studio_id
+			GROUP BY v.node_id
+		) c ON c.node_id=n.id
+		WHERE n.id=$1`, id, now.Add(-90*time.Second)).Scan(&item.ID, &item.Name, &item.BaseURL, &item.WireGuardAddress, &item.Provisioned, &item.Revoked, &item.BundleDownloaded, &item.Online, &item.TotalBytes, &item.AvailableBytes, &item.StudioCount, &item.VideoCount, &item.LastSeenAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Node{}, ErrNotFound
 	}

@@ -387,6 +387,48 @@ func TestCatalogHidesOnlyOfflineNode(t *testing.T) {
 	}
 }
 
+func TestListNodesIncludesInventoryCounts(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	db, err := Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.pool.Exec(ctx, `TRUNCATE audit_logs,playback_sessions,redeem_codes,payment_orders,video_entitlements,videos,studios,media_nodes,site_settings,wallet_entries,wallets,sessions,users RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	items := []MediaItem{
+		{MediaKey: "ready-a", Studio: "Studio A", Title: "A", Compatibility: "ready"},
+		{MediaKey: "ready-b", Studio: "Studio B", Title: "B", Compatibility: "ready"},
+		{MediaKey: "unsupported", Studio: "Studio C", Title: "C", Compatibility: "unsupported"},
+	}
+	if _, err := db.SyncMedia(ctx, "nas", "http://nas", 100, 80, items, now); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := db.ListNodes(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].StudioCount != 2 || nodes[0].VideoCount != 2 {
+		t.Fatalf("nodes=%+v", nodes)
+	}
+	node, err := db.NodeByID(ctx, nodes[0].ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.StudioCount != 2 || node.VideoCount != 2 {
+		t.Fatalf("node by id counts=%d/%d", node.StudioCount, node.VideoCount)
+	}
+}
+
 func TestCleanupExpiredIntegration(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
