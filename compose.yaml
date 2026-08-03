@@ -29,7 +29,7 @@ services:
       DEER_BOOTSTRAP_PASSWORD: ${DEER_BOOTSTRAP_PASSWORD:-deerroom-admin-password}
       DEER_NODE_SECRETS_KEY: ${DEER_NODE_SECRETS_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
       DEER_NODE_IMAGE: ${DEER_NODE_IMAGE:-ghcr.io/lwy183178053/deer-screening-room}
-      DEER_NODE_VERSION: ${DEER_NODE_VERSION:-latest}
+      DEER_NODE_VERSION: ${DEER_NODE_VERSION:-v0.1.3}
       DEER_PASSWORD_HASH_CONCURRENCY: ${DEER_PASSWORD_HASH_CONCURRENCY:-4}
       DEER_USER_STREAM_REQUESTS_PER_MINUTE: ${DEER_USER_STREAM_REQUESTS_PER_MINUTE:-120}
     depends_on:
@@ -63,7 +63,7 @@ services:
       DEER_POSTER_ROOT: /app/posters
       DEER_SCAN_INTERVAL: 10m
     volumes:
-      - ${DEER_MEDIA_HOST_PATH:-E:/BaiduNetdiskDownload}:/media:rw
+      - ${DEER_MEDIA_HOST_PATH:-E:/BaiduNetdiskDownload}:/media:ro
       - poster-data:/app/posters
     depends_on:
       gateway:

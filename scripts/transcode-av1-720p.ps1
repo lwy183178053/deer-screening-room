@@ -21,7 +21,7 @@ function Require-Command([string]$Name) {
 }
 
 function Invoke-FFprobe([string]$Path) {
-    $json = & ffprobe -v error -show_entries 'format=duration:stream=codec_type,codec_name,width,height,bit_rate,channels,sample_rate' -of json -- $Path 2>$null
+    $json = & ffprobe -v error -show_entries 'format=duration:format_tags=title,deer_media_key:stream=codec_type,codec_name,width,height,bit_rate,channels,sample_rate' -of json -- $Path 2>$null
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($json -join ''))) {
         throw "ffprobe failed: $Path"
     }
@@ -30,6 +30,22 @@ function Invoke-FFprobe([string]$Path) {
     }
     catch {
         throw "ffprobe returned invalid JSON: $Path"
+    }
+}
+
+function Get-RelativeMediaPath([string]$Path) {
+    $rootFull = [IO.Path]::GetFullPath($SourceRoot).TrimEnd('\', '/')
+    return $Path.Substring($rootFull.Length).TrimStart('\', '/').Replace('\', '/')
+}
+
+function Get-MediaKey([string]$RelativePath) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($RelativePath.Replace('\', '/').ToLowerInvariant()))
+        return [Convert]::ToBase64String($digest).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+    }
+    finally {
+        $sha.Dispose()
     }
 }
 
@@ -75,6 +91,9 @@ function Convert-Media([string]$InputPath, [string]$OutputPath) {
     $probe = Invoke-FFprobe $InputPath
     $video = Get-VideoStream $probe
     $filter = Get-ScaleFilter $video
+    $relative = Get-RelativeMediaPath $InputPath
+    $title = if ([string]$probe.format.tags.title) { [string]$probe.format.tags.title } else { [IO.Path]::GetFileNameWithoutExtension($InputPath) }
+    $mediaKey = if ([string]$probe.format.tags.deer_media_key -match '^[A-Za-z0-9_-]{43}$') { [string]$probe.format.tags.deer_media_key } else { Get-MediaKey $relative }
     $outputDirectory = Split-Path -Parent $OutputPath
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
     if (Test-Path -LiteralPath $OutputPath) { Remove-Item -LiteralPath $OutputPath -Force }
@@ -83,7 +102,8 @@ function Convert-Media([string]$InputPath, [string]$OutputPath) {
         '-map', '0:v:0', '-map', '0:a?', '-map', '0:s?', '-map_metadata', '0',
         '-vf', $filter, '-c:v', 'av1_nvenc', '-preset', 'p5', '-rc', 'vbr', '-cq', '30', '-b:v', '0',
         '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-ac', '2', '-ar', '48000', '-b:a', '128k',
-        '-c:s', 'mov_text', '-movflags', '+faststart', $OutputPath
+        '-c:s', 'mov_text', '-metadata', "title=$title", '-metadata', "deer_media_key=$mediaKey",
+        '-movflags', '+faststart+use_metadata_tags', $OutputPath
     )
     & ffmpeg @arguments
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $OutputPath)) {
@@ -95,6 +115,9 @@ function Test-EncodedMedia([string]$Path, [object]$SourceProbe) {
     $probe = Invoke-FFprobe $Path
     if (-not (Test-TargetMedia $Path $probe)) {
         throw "Encoded media does not match AV1 720p AAC target: $Path"
+    }
+    if (-not [string]$probe.format.tags.title -or [string]$probe.format.tags.deer_media_key -notmatch '^[A-Za-z0-9_-]{43}$') {
+        throw "Encoded media metadata is incomplete: $Path"
     }
     $sourceDuration = [double]($SourceProbe.format.duration | ForEach-Object { $_ })
     $outputDuration = [double]($probe.format.duration | ForEach-Object { $_ })
@@ -199,15 +222,20 @@ function Invoke-Full([string]$SelectedMode) {
         $lockPath = Enter-Maintenance
         $files = Get-MediaFiles
         if ($SelectedMode -eq 'New') { $files = @($files | Where-Object { -not (Test-TargetMedia $_.FullName (Invoke-FFprobe $_.FullName)) }) }
-        if ($files.Count -eq 0) { Write-Host 'No media requires AV1 conversion.'; return }
-        for ($index = 0; $index -lt $files.Count; $index++) {
-            $file = $files[$index]
-            $temp = "$($file.FullName).av1.tmp.mp4"
-            Write-Host "Encoding $($index + 1)/$($files.Count): $($file.Name)"
-            $sourceProbe = Invoke-FFprobe $file.FullName
-            Convert-Media $file.FullName $temp
-            Replace-Source $file.FullName $temp $sourceProbe
+        if ($files.Count -eq 0) {
+            Write-Host 'No media requires AV1 conversion.'
+        } else {
+            for ($index = 0; $index -lt $files.Count; $index++) {
+                $file = $files[$index]
+                $temp = "$($file.FullName).av1.tmp.mp4"
+                Write-Host "Encoding $($index + 1)/$($files.Count): $($file.Name)"
+                $sourceProbe = Invoke-FFprobe $file.FullName
+                Convert-Media $file.FullName $temp
+                Replace-Source $file.FullName $temp $sourceProbe
+            }
         }
+        & (Join-Path $PSScriptRoot 'set-media-metadata.ps1') -SourceRoot $SourceRoot
+        if ($LASTEXITCODE -ne 0) { throw 'Media metadata processing failed.' }
     }
     finally {
         if ($lockPath) { Exit-Maintenance $lockPath }

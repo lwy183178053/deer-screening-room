@@ -67,7 +67,7 @@ services:
       DEER_POSTER_ROOT: /app/posters
       DEER_SCAN_INTERVAL: ${DEER_SCAN_INTERVAL:-10m}
     volumes:
-      - ${DEER_MEDIA_HOST_PATH}:/media:rw
+      - ${DEER_MEDIA_HOST_PATH}:/media:ro
       - ${DEER_POSTER_HOST_PATH:-./posters}:/app/posters
     depends_on:
       wg:

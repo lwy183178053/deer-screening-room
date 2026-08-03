@@ -42,13 +42,13 @@ type probeResult struct {
 	BitRate                int64
 	Width, Height          int
 	VideoCodec, AudioCodec string
+	Title, MediaKey        string
 }
 
 type Scanner struct {
 	mediaRoot, posterRoot string
 	probe                 func(string) (probeResult, error)
 	poster                func(string, string) error
-	names                 mediaNameMap
 	mu                    sync.RWMutex
 	scanMu                sync.Mutex
 	paths                 map[string]string
@@ -65,11 +65,6 @@ func NewScanner(mediaRoot, posterRoot string) (*Scanner, error) {
 		return nil, err
 	}
 	s := &Scanner{mediaRoot: mediaRoot, posterRoot: posterRoot, paths: map[string]string{}, cache: map[string]cachedItem{}}
-	names, err := loadMediaNameMap(mediaRoot)
-	if err != nil {
-		return nil, err
-	}
-	s.names = names
 	s.probe = s.ffprobe
 	s.poster = s.ffmpegPoster
 	s.loadCache()
@@ -79,14 +74,13 @@ func NewScanner(mediaRoot, posterRoot string) (*Scanner, error) {
 func (s *Scanner) Scan() ([]Item, error) {
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
-	names, err := loadMediaNameMap(s.mediaRoot)
-	if err != nil {
-		return nil, err
+	previousByPath := make(map[string]cachedItem, len(s.cache))
+	for _, cached := range s.cache {
+		previousByPath[cached.RelativePath] = cached
 	}
-	s.names = names
 	nextPaths := map[string]string{}
 	nextCache := map[string]cachedItem{}
-	err = filepath.WalkDir(s.mediaRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(s.mediaRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -102,34 +96,17 @@ func (s *Scanner) Scan() ([]Item, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		if !isHashedMediaFilename(entry.Name()) {
-			path, err = normalizeMediaFile(s.mediaRoot, path, rel, &names)
-			if err != nil {
-				return err
-			}
-			rel, err = filepath.Rel(s.mediaRoot, path)
-			if err != nil {
-				return err
-			}
-			rel = filepath.ToSlash(rel)
-		}
 		info, err := os.Stat(path)
 		if err != nil {
 			return err
 		}
-		mediaRel := rel
-		if mapped, ok := mappedMediaEntry(names, filepath.Base(path)); ok {
-			mediaRel = mappedMediaPath(mapped, rel)
-		}
-		key := mediaKey(mediaRel)
-		nextPaths[key] = path
-		if cached, ok := s.cache[key]; ok && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
-			if mapped, ok := mappedMediaEntry(names, filepath.Base(path)); ok {
-				cached.Studio = mapped.Studio
-				cached.Title = mapped.Title
+		if cached, ok := previousByPath[rel]; ok && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
+			if existing, duplicate := nextPaths[cached.MediaKey]; duplicate && existing != path {
+				return fmt.Errorf("duplicate media key %q", cached.MediaKey)
 			}
 			cached.Compatibility = mediaCompatibility(ext, cached.VideoCodec, cached.AudioCodec)
-			nextCache[key] = cached
+			nextPaths[cached.MediaKey] = path
+			nextCache[cached.MediaKey] = cached
 			return nil
 		}
 		probed, err := s.probe(path)
@@ -142,10 +119,17 @@ func (s *Scanner) Scan() ([]Item, error) {
 			studio = parts[0]
 		}
 		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if mapped, ok := mappedMediaEntry(names, filepath.Base(path)); ok {
-			studio = mapped.Studio
-			title = mapped.Title
+		if strings.TrimSpace(probed.Title) != "" {
+			title = strings.TrimSpace(probed.Title)
 		}
+		key := strings.TrimSpace(probed.MediaKey)
+		if !validKey(key) {
+			key = mediaKey(rel)
+		}
+		if existing, ok := nextPaths[key]; ok && existing != path {
+			return fmt.Errorf("duplicate media key %q", key)
+		}
+		nextPaths[key] = path
 		compatibility := mediaCompatibility(ext, probed.VideoCodec, probed.AudioCodec)
 		posterKey := ""
 		posterPath := filepath.Join(s.posterRoot, key+".jpg")
@@ -256,7 +240,7 @@ func (s *Scanner) saveCache() error {
 }
 
 func (s *Scanner) ffprobe(path string) (probeResult, error) {
-	command := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration,bit_rate:stream=codec_type,codec_name,width,height", "-of", "json", path)
+	command := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration,bit_rate:format_tags=title,deer_media_key:stream=codec_type,codec_name,width,height", "-of", "json", path)
 	output, err := command.Output()
 	if err != nil {
 		return probeResult{}, err
@@ -271,6 +255,10 @@ func (s *Scanner) ffprobe(path string) (probeResult, error) {
 		Format struct {
 			Duration string `json:"duration"`
 			BitRate  string `json:"bit_rate"`
+			Tags     struct {
+				Title    string `json:"title"`
+				MediaKey string `json:"deer_media_key"`
+			} `json:"tags"`
 		} `json:"format"`
 	}
 	if err := json.Unmarshal(output, &body); err != nil {
@@ -281,6 +269,8 @@ func (s *Scanner) ffprobe(path string) (probeResult, error) {
 	_, _ = fmt.Sscanf(body.Format.Duration, "%f", &duration)
 	result.DurationMS = int64(duration * 1000)
 	_, _ = fmt.Sscan(body.Format.BitRate, &result.BitRate)
+	result.Title = body.Format.Tags.Title
+	result.MediaKey = body.Format.Tags.MediaKey
 	for _, stream := range body.Streams {
 		if stream.CodecType == "video" && result.VideoCodec == "" {
 			result.VideoCodec = stream.CodecName

@@ -80,10 +80,10 @@ func TestBuildBundleContainsOnlyRuntimeFiles(t *testing.T) {
 	if !strings.Contains(files["node.env"], "DEER_NODE_NAME=ugreen-media") || !strings.Contains(files["node.env"], "DEER_MEDIA_HOST_PATH=/CHANGE_ME") || strings.Contains(files["node.env"], "DEER_MEDIA_SOURCE_ROOT") {
 		t.Fatalf("env=%q", files["node.env"])
 	}
-	if strings.Contains(files["compose.yaml"], "replace-node-api-token") || !strings.Contains(files["compose.yaml"], "env_file: [node.env]") || strings.Contains(files["compose.yaml"], "DEER_MEDIA_SOURCE_ROOT") || strings.Contains(files["compose.yaml"], "media-view") || !strings.Contains(files["compose.yaml"], "DEER_MEDIA_HOST_PATH") || !strings.Contains(files["compose.yaml"], ":/media:rw") {
+	if strings.Contains(files["compose.yaml"], "replace-node-api-token") || !strings.Contains(files["compose.yaml"], "env_file: [node.env]") || strings.Contains(files["compose.yaml"], "DEER_MEDIA_SOURCE_ROOT") || strings.Contains(files["compose.yaml"], "media-view") || !strings.Contains(files["compose.yaml"], "DEER_MEDIA_HOST_PATH") || !strings.Contains(files["compose.yaml"], ":/media:ro") || strings.Contains(files["compose.yaml"], ":/media:rw") {
 		t.Fatalf("compose did not expose runtime env mapping")
 	}
-	if !strings.Contains(files["README.txt"], "只需要选择一次 NAS 视频目录") || !strings.Contains(files["README.txt"], ".deer-media-map.json") {
+	if !strings.Contains(files["README.txt"], "只需要选择一次 NAS 视频目录") || !strings.Contains(files["README.txt"], "MP4 title") || strings.Contains(files["README.txt"], ".deer-media-map.json") {
 		t.Fatalf("readme=%q", files["README.txt"])
 	}
 }
@@ -114,7 +114,7 @@ func TestBuildBundleNormalizesWireGuardCIDR(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(content), "DEER_NODE_WIREGUARD_ADDRESS=10.77.0.2/32\n") || strings.Contains(string(content), "10.77.0.2/32/32") {
+		if !strings.Contains(string(content), "DEER_NODE_WIREGUARD_ADDRESS=10.77.0.2/32\n") || strings.Contains(string(content), "10.77.0.2/32/32") || !strings.Contains(string(content), "DEER_VERSION=v0.1.3\n") {
 			t.Fatalf("env=%q", content)
 		}
 		return

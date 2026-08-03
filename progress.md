@@ -1251,3 +1251,39 @@
 - `/opt/deer-screening-room/backups/project-audit-before-20260803-1`：部署前环境文件、Gateway inspect 和容器状态备份，不含在 Git 中。
 - `progress.md`：追加线上部署证据和回滚点。
 - 回滚方式：在 104 使用旧发布目录 `/opt/deer-screening-room/app.node-counts-20260803-1/deploy/cloud`，执行 `DEER_VERSION=node-counts-20260803-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps gateway`；不使用 `-v`，不操作 Web、数据库、WireGuard 或其他业务容器。
+
+## 2026-08-03 - Task: 迁移 MP4 元数据标题并部署本机 v0.1.3 节点
+### What was done
+- 将节点媒体识别从根目录 JSON 映射迁移到 MP4 元数据：`title` 用于网页标题，`deer_media_key` 继续保存原有稳定身份；扫描器不再改写媒体目录。
+- 新增 Windows 元数据整理脚本，使用 FFmpeg 流复制写入元数据，按 240 个 UTF-8 字节安全截断超长文件名并追加 8 位哈希；AV1 转码与 7z 解压流程已接入该处理。
+- 在媒体根目录外创建 37.33 GiB 完整备份和迁移快照，普通/超长双样本通过后迁移 79 个 MP4；旧 JSON 已从真实媒体根目录删除，原工作室、79 个媒体键和 2 条购买权益保持。
+- 节点媒体挂载统一改为只读，节点包和缺省配置固定使用 `v0.1.3`；本机仅替换三个已停止的小鹿节点容器，并以 `deerroom-app:v0.1.3` 重新上线。
+
+### Testing
+- `go test ./...`、`go test -race ./...`、`go vet ./...`：通过。
+- `web`: Vitest 3 个文件/6 项通过，生产构建通过，Playwright 11 项通过。
+- `scripts/set-media-metadata.tests.ps1`：通过超长 Unicode、240 字节边界、幂等和目标冲突保护；4 个 PowerShell 脚本解析通过。
+- 根 Compose、云端 Compose、宿主 Caddy 组合、Windows 节点、registry 节点和绿联节点共 6 套配置解析通过；`git diff --check` 通过。
+- 迁移前旧映射、节点缓存和线上 `windows-media` 可用目录均为相同的 79 个媒体键；外部备份 81 个文件逐文件 SHA-256 一致。
+- 双样本与全量验收均保持标题、稳定键、时长、轨道和工作室；迁移后为 79 个唯一键、0 个哈希媒体文件名、0 个超过 240 字节文件名、0 个迁移临时文件。
+- 本机 `deer-wg` 健康且有最新握手，`deer-node` 使用 `v0.1.3`，`/media` 为只读；线上节点为 79 个可用视频、5 个工作室、2 条权益，哈希标题计数为 0。
+- 节点真实媒体请求返回 `206 Partial Content`，`Content-Range` 为 `bytes 0-1023/558673160`，响应体为 1024 字节；公网健康接口返回成功。
+- 104 的 Web、PostgreSQL、WireGuard、provisioner、ModelRoute 和 Sub2API 启动时间保持本轮操作前记录。本机其他业务容器未被本轮命令操作；其启动时间在小鹿节点重建前由外部状态变化更新，已按实际情况保留记录。
+
+### Notes
+- `compose.yaml`：媒体挂载改为只读，节点包缺省版本固定为 `v0.1.3`。
+- `deploy/cloud/.env.example`、`deploy/cloud/compose.yaml`：云端节点包版本示例和缺省值固定为 `v0.1.3`。
+- `deploy/media-node/.env.example`、`deploy/media-node/.env.ugreen.example`：节点示例镜像版本固定为 `v0.1.3`。
+- `deploy/media-node/compose.yaml`、`deploy/media-node/compose.ugreen.yaml`：节点媒体目录挂载改为只读。
+- `internal/config/config.go`、`internal/config/config_test.go`：Gateway 的节点包缺省版本固定为 `v0.1.3` 并增加回归测试。
+- `internal/media/scanner.go`、`internal/media/scanner_test.go`：读取 MP4 标题和稳定键元数据，按相对路径命中缓存，不再写媒体目录。
+- `internal/media/name_map.go`、`internal/media/name_map_test.go`：删除运行时 JSON 映射实现及测试。
+- `internal/provisioning/provisioning.go`、`internal/provisioning/provisioning_test.go`：生成只读媒体挂载、固定版本且不依赖 JSON 映射的节点包。
+- `scripts/set-media-metadata.ps1`、`scripts/set-media-metadata.tests.ps1`：新增流复制元数据迁移、文件名截断、校验和回归测试。
+- `scripts/transcode-av1-720p.ps1`、`scripts/extract-7z-and-delete.ps1`：转码直接写入元数据，整批处理后统一整理，不再调用旧标准化脚本。
+- `scripts/normalize-media-names.ps1`、`scripts/normalize-media-names.tests.ps1`：删除旧哈希改名脚本及测试。
+- `docs/architecture.md`、`docs/deployment-fnos.md`、`docs/local-archive-extraction.md`、`docs/media-library.md`、`docs/operations.md`、`docs/security.md`：同步元数据身份、只读挂载、自动处理和回滚说明。
+- `docs/superpowers/plans/2026-08-03-media-hash-names.md`、`docs/superpowers/specs/2026-08-03-media-hash-names-design.md`：删除已废弃的 JSON/哈希文件名设计。
+- `progress.md`：追加本轮实施、验证、生产基线与回滚记录。
+- `E:\BaiduNetdiskDownload.metadata-backup-20260803`：仓库外完整原片、旧映射和 `migration-snapshot.json` 备份；不纳入 Git。
+- 回滚方式：先执行 `docker compose --project-name deer-screening-room-media-1 --file deploy/media-node/compose.yaml --env-file deploy/media-node/.env down`（不使用 `-v`），将当前媒体目录移到隔离位置后从 `E:\BaiduNetdiskDownload.metadata-backup-20260803` 恢复原目录；代码回退到 `c04f52e`，本机节点固定旧镜像 `media-hash-20260803` 后重新启动。104 尚未在本条记录阶段更新。

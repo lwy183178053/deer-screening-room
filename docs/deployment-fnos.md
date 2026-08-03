@@ -17,7 +17,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 ## 2. Configure the media path
 
-在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将该目录挂载到 `/media`，节点在文件大小稳定后把视频标准化为短哈希名，并在根目录写入 `.deer-media-map.json`；工作室目录不变，网页仍显示原始标题。`posters/` 是可写生成目录，丢失后可重新扫描生成。Windows 节点首次迁移和后续解压流程使用 `scripts\normalize-media-names.ps1`，Linux/NAS 节点可由扫描器处理可枚举的新文件。
+在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将该目录只读挂载到 `/media`；`posters/` 是独立可写缓存目录，丢失后可重新扫描生成。Windows 新增视频先运行 `scripts\set-media-metadata.ps1` 写入网页标题和稳定媒体键，节点只读取媒体。
 
 源目录约定：
 
@@ -29,9 +29,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
     作品二.mp4
 ```
 
-Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。中文文件名较长时可能导致整个工作室目录返回 `input/output error`，所以首次启动节点前先运行标准化脚本；脚本使用 Windows 文件 API 改名，容器随后只看到短哈希名。
-
-Windows、Linux 和 NAS 均使用同一媒体根目录和映射格式。当前版本不生成兼容视图，也不复制视频；只在原工作室目录内改名，并维护 `.deer-media-map.json`。
+Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。元数据脚本将上限控制为 240 字节，超长名称追加 8 位哈希以避免截断重名。Windows、Linux 和 NAS 均直接读取同一 MP4 元数据格式，不需要旁路 JSON 或兼容视图。
 
 ## 3. Start services
 
@@ -45,7 +43,7 @@ For a private GHCR package, create a GitHub token with `read:packages` and sign 
 echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u lwy183178053 --password-stdin
 ```
 
-Set the selected image tag in the generated `node.env`, import the generated `compose.yaml` as the Docker project, and set only `DEER_MEDIA_HOST_PATH` to the NAS video directory in the project's environment editor. The file has no local `build` step and reads the node identity from the bundle:
+The generated `node.env` pins `DEER_VERSION=v0.1.3`. Import the generated `compose.yaml` as the Docker project and set only `DEER_MEDIA_HOST_PATH` to the NAS video directory in the project's environment editor. The file has no local `build` step and reads the node identity from the bundle:
 
 ```bash
 DEER_MEDIA_HOST_PATH=/vol1/1000/video

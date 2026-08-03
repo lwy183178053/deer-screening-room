@@ -46,9 +46,8 @@ func TestScannerCatalogAndCache(t *testing.T) {
 	if item.Studio != "工作室甲" || item.Title != "作品一" || item.Compatibility != "ready" || item.PosterKey == "" {
 		t.Fatalf("item=%+v", item)
 	}
-	expectedPath := filepath.Join(root, "工作室甲", hashedMediaFilename("工作室甲/作品一.mp4"))
-	if resolved, ok := scanner.ResolveMedia(item.MediaKey); !ok || resolved != expectedPath {
-		t.Fatalf("resolved=%q ok=%v expected=%q", resolved, ok, expectedPath)
+	if resolved, ok := scanner.ResolveMedia(item.MediaKey); !ok || resolved != videoPath {
+		t.Fatalf("resolved=%q ok=%v expected=%q", resolved, ok, videoPath)
 	}
 	if _, ok := scanner.ResolvePoster("../../etc/passwd"); ok {
 		t.Fatal("accepted traversal poster key")
@@ -93,7 +92,7 @@ func TestScannerAcceptsAV1MP4(t *testing.T) {
 func TestScannerRefreshesCachedCompatibility(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
-	videoPath := filepath.Join(root, hashedMediaFilename("cached.mp4"))
+	videoPath := filepath.Join(root, "cached.mp4")
 	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -123,54 +122,39 @@ func TestScannerRefreshesCachedCompatibility(t *testing.T) {
 	}
 }
 
-func TestScannerUsesMappedTitleForHashedFile(t *testing.T) {
+func TestScannerUsesEmbeddedTitleAndStableMediaKey(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
 	studio := filepath.Join(root, "悠米")
 	if err := os.Mkdir(studio, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	name := hashedMediaFilename("悠米/作品一.mp4")
-	videoPath := filepath.Join(studio, name)
+	videoPath := filepath.Join(studio, "作品一-ab12cd34.mp4")
 	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveMediaNameMap(root, mediaNameMap{Version: 1, Files: map[string]mediaNameEntry{
-		name: {Studio: "悠米", OriginalName: "作品一.mp4", OriginalPath: "悠米/作品一.mp4", Title: "作品一"},
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(videoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cache := []cachedItem{{Item: Item{MediaKey: mediaKey("悠米/作品一.mp4"), Studio: "悠米", Title: "media-old-title", SizeBytes: info.Size(), VideoCodec: "av1", AudioCodec: "aac"}, RelativePath: "悠米/" + name, ModifiedUnix: info.ModTime().Unix()}}
-	body, err := json.Marshal(cache)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(posters, "catalog-cache.json"), body, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	stableKey := mediaKey("悠米/作品一.mp4")
 	scanner, err := NewScanner(root, posters)
 	if err != nil {
 		t.Fatal(err)
 	}
 	scanner.probe = func(string) (probeResult, error) {
-		t.Fatal("mapped cached media should not be probed")
-		return probeResult{}, nil
+		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac", Title: "作品一", MediaKey: stableKey}, nil
 	}
 	scanner.poster = func(string, string) error { return nil }
 	items, err := scanner.Scan()
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items=%+v err=%v", items, err)
 	}
-	if items[0].Title != "作品一" || items[0].Studio != "悠米" {
+	if items[0].Title != "作品一" || items[0].Studio != "悠米" || items[0].MediaKey != stableKey {
 		t.Fatalf("item=%+v", items[0])
+	}
+	if _, err := os.Stat(videoPath); err != nil {
+		t.Fatalf("scanner modified source: %v", err)
 	}
 }
 
-func TestScannerNormalizesNewMedia(t *testing.T) {
+func TestScannerFallsBackWhenMetadataIsMissingOrInvalid(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
 	studio := filepath.Join(root, "工作室甲")
@@ -186,19 +170,15 @@ func TestScannerNormalizesNewMedia(t *testing.T) {
 		t.Fatal(err)
 	}
 	scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac"}, nil
+		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac", Title: "", MediaKey: "invalid"}, nil
 	}
 	scanner.poster = func(string, string) error { return nil }
 	items, err := scanner.Scan()
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items=%+v err=%v", items, err)
 	}
-	expected := filepath.Join(studio, hashedMediaFilename("工作室甲/作品一.mp4"))
-	if _, err := os.Stat(source); !os.IsNotExist(err) {
-		t.Fatalf("source was not renamed: %v", err)
-	}
-	if resolved, ok := scanner.ResolveMedia(items[0].MediaKey); !ok || resolved != expected {
-		t.Fatalf("resolved=%q ok=%v expected=%q", resolved, ok, expected)
+	if resolved, ok := scanner.ResolveMedia(items[0].MediaKey); !ok || resolved != source {
+		t.Fatalf("resolved=%q ok=%v expected=%q", resolved, ok, source)
 	}
 	if items[0].Title != "作品一" || items[0].Studio != "工作室甲" {
 		t.Fatalf("item=%+v", items[0])

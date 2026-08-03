@@ -23,7 +23,7 @@ To process another directory:
 
 If an archive fails its password/integrity test or extraction, it is kept and the script continues with the remaining archives. A failed direct extraction may leave partial files beside the retained archive; rerun it after fixing the problem.
 
-After adding videos on Windows, the extraction script runs `scripts\transcode-av1-720p.ps1 -Mode New` and then `scripts\normalize-media-names.ps1` after the complete archive batch succeeds. It pauses only the media-node service, validates each AV1 output, replaces the source file, and standardizes the filename inside its existing studio directory. A failed conversion or filename normalization keeps the source file and stops that batch. The root `.deer-media-map.json` keeps the original display title.
+After adding videos on Windows, the extraction script runs `scripts\transcode-av1-720p.ps1 -Mode New` after the complete archive batch succeeds. It pauses only the media-node service, validates each AV1 output, writes the MP4 `title` and `deer_media_key`, and shortens filenames above 240 UTF-8 bytes. A failed conversion or metadata update keeps the source file and stops that batch.
 
 The conversion script supports a non-destructive sample run and the full migration:
 
