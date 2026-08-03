@@ -25,7 +25,7 @@ func TestHashedMediaFilenameIsStable(t *testing.T) {
 func TestMediaNameMapRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	want := mediaNameMap{Version: 1, Files: map[string]mediaNameEntry{
-		"media-abcd.mp4": {Studio: "悠米", OriginalName: "作品一.mp4", Title: "作品一"},
+		"media-abcd.mp4": {Studio: "悠米", OriginalName: "作品一.mp4", OriginalPath: "悠米/作品一.mp4", Title: "作品一"},
 	}}
 	if err := saveMediaNameMap(root, want); err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestNormalizeMediaFilePreservesStudioAndMapsTitle(t *testing.T) {
 		t.Fatalf("source still exists: %v", err)
 	}
 	entry, ok := names.Files[filepath.Base(target)]
-	if !ok || entry.Studio != "悠米" || entry.OriginalName != "作品一.mp4" || entry.Title != "作品一" {
+	if !ok || entry.Studio != "悠米" || entry.OriginalName != "作品一.mp4" || entry.OriginalPath != "悠米/作品一.mp4" || entry.Title != "作品一" {
 		t.Fatalf("entry=%+v ok=%v", entry, ok)
 	}
 	if _, err := os.Stat(filepath.Join(root, mediaMapFilename)); err != nil {

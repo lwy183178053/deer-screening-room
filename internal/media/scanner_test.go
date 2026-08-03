@@ -136,7 +136,7 @@ func TestScannerUsesMappedTitleForHashedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := saveMediaNameMap(root, mediaNameMap{Version: 1, Files: map[string]mediaNameEntry{
-		name: {Studio: "悠米", OriginalName: "作品一.mp4", Title: "作品一"},
+		name: {Studio: "悠米", OriginalName: "作品一.mp4", OriginalPath: "悠米/作品一.mp4", Title: "作品一"},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestScannerUsesMappedTitleForHashedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache := []cachedItem{{Item: Item{MediaKey: mediaKey("悠米/" + name), Studio: "悠米", Title: "media-old-title", SizeBytes: info.Size(), VideoCodec: "av1", AudioCodec: "aac"}, RelativePath: "悠米/" + name, ModifiedUnix: info.ModTime().Unix()}}
+	cache := []cachedItem{{Item: Item{MediaKey: mediaKey("悠米/作品一.mp4"), Studio: "悠米", Title: "media-old-title", SizeBytes: info.Size(), VideoCodec: "av1", AudioCodec: "aac"}, RelativePath: "悠米/" + name, ModifiedUnix: info.ModTime().Unix()}}
 	body, err := json.Marshal(cache)
 	if err != nil {
 		t.Fatal(err)
@@ -202,6 +202,9 @@ func TestScannerNormalizesNewMedia(t *testing.T) {
 	}
 	if items[0].Title != "作品一" || items[0].Studio != "工作室甲" {
 		t.Fatalf("item=%+v", items[0])
+	}
+	if items[0].MediaKey != mediaKey("工作室甲/作品一.mp4") {
+		t.Fatalf("media key changed after rename: %q", items[0].MediaKey)
 	}
 }
 

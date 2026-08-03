@@ -19,6 +19,7 @@ var hashedMediaPattern = regexp.MustCompile(`^media-[0-9a-f]{64}\.[a-z0-9]+$`)
 type mediaNameEntry struct {
 	Studio       string `json:"studio"`
 	OriginalName string `json:"original_name"`
+	OriginalPath string `json:"original_path"`
 	Title        string `json:"title"`
 }
 
@@ -130,6 +131,7 @@ func normalizeMediaFile(root, path, relative string, names *mediaNameMap) (strin
 	names.Files[key] = mediaNameEntry{
 		Studio:       studio,
 		OriginalName: filepath.Base(path),
+		OriginalPath: filepath.ToSlash(relative),
 		Title:        strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
 	}
 	if err := saveMediaNameMap(root, *names); err != nil {
@@ -147,4 +149,14 @@ func normalizeMediaFile(root, path, relative string, names *mediaNameMap) (strin
 func mappedMediaEntry(names mediaNameMap, filename string) (mediaNameEntry, bool) {
 	entry, ok := names.Files[filepath.Base(filename)]
 	return entry, ok
+}
+
+func mappedMediaPath(entry mediaNameEntry, current string) string {
+	if entry.OriginalPath != "" {
+		return filepath.ToSlash(entry.OriginalPath)
+	}
+	if entry.Studio == "" || entry.Studio == "未分类" {
+		return filepath.ToSlash(entry.OriginalName)
+	}
+	return filepath.ToSlash(filepath.Join(entry.Studio, entry.OriginalName))
 }

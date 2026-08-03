@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 $VideoExtensions = @('.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi')
 $HashedNamePattern = '^media-[0-9a-f]{64}\.[a-z0-9]+$'
 $MapFilename = '.deer-media-map.json'
+$script:MediaMapNeedsUpgrade = $false
 
 function Get-RelativeMediaPath([string]$Root, [string]$Path) {
     $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
@@ -40,9 +41,19 @@ function Read-MediaMap([string]$Root) {
     }
     if ($body.files) {
         foreach ($property in $body.files.PSObject.Properties) {
+            $originalPath = [string]$property.Value.original_path
+            if (-not $originalPath) {
+                $originalPath = if ([string]$property.Value.studio -and [string]$property.Value.studio -ne '未分类') {
+                    ([string]$property.Value.studio + '/' + [string]$property.Value.original_name)
+                } else {
+                    [string]$property.Value.original_name
+                }
+                $script:MediaMapNeedsUpgrade = $true
+            }
             $map.files[$property.Name] = [ordered]@{
                 studio = [string]$property.Value.studio
                 original_name = [string]$property.Value.original_name
+                original_path = $originalPath
                 title = [string]$property.Value.title
             }
         }
@@ -101,6 +112,7 @@ function Normalize-MediaFile([hashtable]$Map, [string]$Root, [IO.FileInfo]$File)
     $entry = [ordered]@{
         studio = $studio
         original_name = $File.Name
+        original_path = $relative
         title = [IO.Path]::GetFileNameWithoutExtension($File.Name)
     }
 
@@ -132,5 +144,6 @@ foreach ($file in $files) {
 if ($WhatIfPreference) {
     Write-Host 'Dry run completed.'
 } else {
+    if ($script:MediaMapNeedsUpgrade) { Write-MediaMap $rootFull $map }
     Write-Host "Media filename normalization completed: $changed file(s)." -ForegroundColor Green
 }

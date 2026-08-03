@@ -117,7 +117,11 @@ func (s *Scanner) Scan() ([]Item, error) {
 		if err != nil {
 			return err
 		}
-		key := mediaKey(rel)
+		mediaRel := rel
+		if mapped, ok := mappedMediaEntry(names, filepath.Base(path)); ok {
+			mediaRel = mappedMediaPath(mapped, rel)
+		}
+		key := mediaKey(mediaRel)
 		nextPaths[key] = path
 		if cached, ok := s.cache[key]; ok && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
 			if mapped, ok := mappedMediaEntry(names, filepath.Base(path)); ok {

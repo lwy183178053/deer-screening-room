@@ -20,7 +20,7 @@ try {
     $mapPath = Join-Path $root '.deer-media-map.json'
     $map = Get-Content -LiteralPath $mapPath -Raw | ConvertFrom-Json
     $entry = $map.files.($videos[0].Name)
-    if (-not $entry -or $entry.title -ne [IO.Path]::GetFileNameWithoutExtension($longName) -or $entry.studio -ne '悠米') {
+    if (-not $entry -or $entry.title -ne [IO.Path]::GetFileNameWithoutExtension($longName) -or $entry.studio -ne '悠米' -or $entry.original_path -ne ('悠米/' + $longName)) {
         throw 'mapping entry did not preserve the original title'
     }
     if (-not (Test-Path -LiteralPath (Join-Path $studio '说明.txt'))) {

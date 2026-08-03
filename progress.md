@@ -1112,3 +1112,25 @@
 - `docs/superpowers/plans/2026-08-03-media-hash-names.md`：记录分任务实现、测试、部署和迁移步骤。
 - `progress.md`：追加本轮计划落点。
 - 回滚方式：本轮无运行代码和媒体文件改动；删除本轮计划文档即可回到上一提交。实施阶段按计划使用映射表恢复文件名并恢复旧 Compose/镜像。
+
+## 2026-08-03 - Task: 固化哈希媒体键并更新本机节点
+### What was done
+- 为媒体映射补充 `original_path`，扫描器按原始规范化相对路径生成稳定媒体键，避免视频文件改名后产生重复目录记录。
+- 为现有 Windows 媒体根目录 79 条映射补齐 `original_path`；79 个视频仍为哈希文件名，未复制、转码、删除或改变工作室目录。
+- 重建本机 `deerroom-app:media-hash-20260803` 并仅重建 `deer-node`；现有 `deer-wg`、ModelRoute、Redis、MySQL 等容器未重启。
+- 更新媒体库设计文档，说明映射字段和媒体键稳定性。
+
+### Testing
+- `go test ./...`、`go test -race ./...`、`go vet ./...`：通过。
+- `npm.cmd test`：3 个测试文件、6 项通过；`npm.cmd run build`：生产构建通过。
+- 根 Compose、云端 Compose、宿主 Caddy 覆盖、Windows 节点、绿联节点和 registry 覆盖 `config --quiet`：通过；`git diff --check`：通过。
+- Windows 媒体审计：视频 79、哈希文件 79、映射 79、缺失 `original_path` 0、超长文件名 0。
+- 本机 `deer-node` `/api/v1/health` 返回 200；`deer-wg` 与云端端点保持最新握手；公网目录返回总数 79，AV1/AAC 视频均为 ready。
+
+### Notes
+- `internal/media/name_map.go`、`internal/media/scanner.go`：记录原始路径并使用稳定媒体键。
+- `internal/media/name_map_test.go`、`internal/media/scanner_test.go`：覆盖映射往返、缓存命中和改名后媒体键不变。
+- `scripts/normalize-media-names.ps1`、`scripts/normalize-media-names.tests.ps1`：升级旧映射并验证幂等行为。
+- `docs/media-library.md`、`docs/superpowers/specs/2026-08-03-media-hash-names-design.md`：同步稳定键说明。
+- `E:\BaiduNetdiskDownload\.deer-media-map.json`：现有 79 条记录已补齐原始路径字段，不纳入 Git。
+- 回滚点：代码回退到提交 `ffdf533` 后重新构建并仅重启 `deer-node`；映射中的新增字段旧版本会忽略，原始视频文件仍保留。
