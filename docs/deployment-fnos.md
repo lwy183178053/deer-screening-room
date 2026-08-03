@@ -17,7 +17,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 ## 2. Configure the media path
 
-在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将该目录只读挂载到 `/media`；`posters/` 是独立可写缓存目录，丢失后可重新扫描生成。Windows 新增视频先运行 `scripts\set-media-metadata.ps1` 写入网页标题和稳定媒体键，节点只读取媒体。
+在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将该目录只读挂载到 `/media`；`posters/` 是独立可写缓存目录，丢失后可重新扫描生成。节点只接收带 AAC 音频、`title` 与合法 `deer_media_key` 的 AV1 MP4；Windows 新增视频通过 `scripts\transcode-av1-720p.ps1` 转码并写入元数据，节点只读取媒体。不符合规范的文件会被跳过，原因写入 `deer-node` 日志。
 
 源目录约定：
 
@@ -43,7 +43,7 @@ For a private GHCR package, create a GitHub token with `read:packages` and sign 
 echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u lwy183178053 --password-stdin
 ```
 
-The generated `node.env` pins `DEER_VERSION=v0.1.3`. Import the generated `compose.yaml` as the Docker project and set only `DEER_MEDIA_HOST_PATH` to the NAS video directory in the project's environment editor. The file has no local `build` step and reads the node identity from the bundle:
+The generated `node.env` pins the released node version. Import the generated `compose.yaml` as the Docker project and set only `DEER_MEDIA_HOST_PATH` to the NAS video directory in the project's environment editor. This generated bundle is the only supported NAS node deployment entry; the repository no longer carries separate UGREEN, registry-overlay, or manual node WireGuard templates. The file has no local `build` step and reads the node identity from the bundle:
 
 ```bash
 DEER_MEDIA_HOST_PATH=/vol1/1000/video

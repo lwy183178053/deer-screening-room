@@ -32,7 +32,7 @@ func TestScannerCatalogAndCache(t *testing.T) {
 	probes := 0
 	scanner.probe = func(string) (probeResult, error) {
 		probes++
-		return probeResult{DurationMS: 123000, BitRate: 2500000, Width: 1920, Height: 1080, VideoCodec: "h264", AudioCodec: "aac"}, nil
+		return probeResult{DurationMS: 123000, BitRate: 2500000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac", Title: "作品一", MediaKey: strings.Repeat("A", 43)}, nil
 	}
 	scanner.poster = func(_, destination string) error { return os.WriteFile(destination, []byte("jpeg"), 0o600) }
 	items, err := scanner.Scan()
@@ -68,7 +68,7 @@ func TestScannerCatalogAndCache(t *testing.T) {
 	}
 }
 
-func TestScannerAcceptsAV1MP4(t *testing.T) {
+func TestScannerAcceptsStrictAV1AACMP4(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
 	videoPath := filepath.Join(root, "av1.mp4")
@@ -80,7 +80,7 @@ func TestScannerAcceptsAV1MP4(t *testing.T) {
 		t.Fatal(err)
 	}
 	scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac"}, nil
+		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac", Title: "AV1 样本", MediaKey: strings.Repeat("A", 43)}, nil
 	}
 	scanner.poster = func(string, string) error { return nil }
 	items, err := scanner.Scan()
@@ -89,7 +89,7 @@ func TestScannerAcceptsAV1MP4(t *testing.T) {
 	}
 }
 
-func TestScannerRefreshesCachedCompatibility(t *testing.T) {
+func TestScannerReprobesUnverifiedCache(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
 	videoPath := filepath.Join(root, "cached.mp4")
@@ -100,7 +100,8 @@ func TestScannerRefreshesCachedCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache := []cachedItem{{Item: Item{MediaKey: mediaKey(filepath.Base(videoPath)), VideoCodec: "av1", AudioCodec: "aac", Compatibility: "unsupported", SizeBytes: info.Size()}, RelativePath: filepath.Base(videoPath), ModifiedUnix: info.ModTime().Unix()}}
+	stableKey := strings.Repeat("A", 43)
+	cache := []cachedItem{{Item: Item{MediaKey: stableKey, Title: "cached", VideoCodec: "av1", AudioCodec: "aac", Compatibility: "ready", SizeBytes: info.Size()}, RelativePath: filepath.Base(videoPath), ModifiedUnix: info.ModTime().Unix()}}
 	body, err := json.Marshal(cache)
 	if err != nil {
 		t.Fatal(err)
@@ -112,13 +113,17 @@ func TestScannerRefreshesCachedCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	probes := 0
 	scanner.probe = func(string) (probeResult, error) {
-		t.Fatal("cached media should not be probed")
-		return probeResult{}, nil
+		probes++
+		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac", Title: "cached", MediaKey: stableKey}, nil
 	}
 	items, err := scanner.Scan()
 	if err != nil || len(items) != 1 || items[0].Compatibility != "ready" {
 		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	if probes != 1 {
+		t.Fatalf("unverified cache probes=%d", probes)
 	}
 }
 
@@ -133,7 +138,7 @@ func TestScannerUsesEmbeddedTitleAndStableMediaKey(t *testing.T) {
 	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	stableKey := mediaKey("悠米/作品一.mp4")
+	stableKey := strings.Repeat("A", 43)
 	scanner, err := NewScanner(root, posters)
 	if err != nil {
 		t.Fatal(err)
@@ -154,37 +159,50 @@ func TestScannerUsesEmbeddedTitleAndStableMediaKey(t *testing.T) {
 	}
 }
 
-func TestScannerFallsBackWhenMetadataIsMissingOrInvalid(t *testing.T) {
+func TestScannerSkipsFilesOutsideStrictMediaContract(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
 	studio := filepath.Join(root, "工作室甲")
 	if err := os.Mkdir(studio, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	source := filepath.Join(studio, "作品一.mp4")
-	if err := os.WriteFile(source, []byte("video"), 0o600); err != nil {
-		t.Fatal(err)
+	files := []string{"valid.mp4", "missing-title.mp4", "invalid-key.mp4", "h264.mp4", "silent.mp4", "corrupt.mp4", "other.mkv"}
+	for _, name := range files {
+		if err := os.WriteFile(filepath.Join(studio, name), []byte("video"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	scanner, err := NewScanner(root, posters)
 	if err != nil {
 		t.Fatal(err)
 	}
-	scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac", Title: "", MediaKey: "invalid"}, nil
+	stableKey := strings.Repeat("A", 43)
+	scanner.probe = func(path string) (probeResult, error) {
+		result := probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac", Title: "作品", MediaKey: stableKey}
+		switch filepath.Base(path) {
+		case "missing-title.mp4":
+			result.Title = ""
+		case "invalid-key.mp4":
+			result.MediaKey = "invalid"
+		case "h264.mp4":
+			result.VideoCodec = "h264"
+		case "silent.mp4":
+			result.AudioCodec = ""
+		case "corrupt.mp4":
+			return probeResult{}, os.ErrInvalid
+		}
+		return result, nil
 	}
 	scanner.poster = func(string, string) error { return nil }
 	items, err := scanner.Scan()
 	if err != nil || len(items) != 1 {
 		t.Fatalf("items=%+v err=%v", items, err)
 	}
-	if resolved, ok := scanner.ResolveMedia(items[0].MediaKey); !ok || resolved != source {
-		t.Fatalf("resolved=%q ok=%v expected=%q", resolved, ok, source)
-	}
-	if items[0].Title != "作品一" || items[0].Studio != "工作室甲" {
+	if items[0].Title != "作品" || items[0].Studio != "工作室甲" || items[0].MediaKey != stableKey {
 		t.Fatalf("item=%+v", items[0])
 	}
-	if items[0].MediaKey != mediaKey("工作室甲/作品一.mp4") {
-		t.Fatalf("media key changed after rename: %q", items[0].MediaKey)
+	if resolved, ok := scanner.ResolveMedia(stableKey); !ok || resolved != filepath.Join(studio, "valid.mp4") {
+		t.Fatalf("resolved=%q ok=%v", resolved, ok)
 	}
 }
 
@@ -211,7 +229,7 @@ func TestNodeSkipsUnchangedInventorySync(t *testing.T) {
 		t.Fatal(err)
 	}
 	node.scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, VideoCodec: "h264", AudioCodec: "aac"}, nil
+		return probeResult{DurationMS: 1000, VideoCodec: "av1", AudioCodec: "aac", Title: "样本", MediaKey: strings.Repeat("A", 43)}, nil
 	}
 	node.scanner.poster = func(string, string) error { return nil }
 	if err := node.rescanAndSync(context.Background()); err != nil {
@@ -240,7 +258,7 @@ func TestNodeRangeAndRelayAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	node.scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, VideoCodec: "h264", AudioCodec: "aac"}, nil
+		return probeResult{DurationMS: 1000, VideoCodec: "av1", AudioCodec: "aac", Title: "样本", MediaKey: strings.Repeat("A", 43)}, nil
 	}
 	node.scanner.poster = func(string, string) error { return nil }
 	items, err := node.scanner.Scan()

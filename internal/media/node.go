@@ -251,7 +251,7 @@ func (n *Node) serveMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Disposition", "inline")
-	w.Header().Set("Content-Type", mediaType(filepath.Ext(path)))
+	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), file)
 }
@@ -271,16 +271,6 @@ func (n *Node) servePoster(w http.ResponseWriter, r *http.Request) {
 func (n *Node) authorized(r *http.Request) bool {
 	received := r.Header.Get("X-Relay-Token")
 	return len(received) == len(n.config.RelayToken) && received != "" && subtle.ConstantTimeCompare([]byte(received), []byte(n.config.RelayToken)) == 1
-}
-func mediaType(ext string) string {
-	switch strings.ToLower(ext) {
-	case ".mp4", ".m4v", ".mov":
-		return "video/mp4"
-	case ".webm":
-		return "video/webm"
-	default:
-		return "application/octet-stream"
-	}
 }
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

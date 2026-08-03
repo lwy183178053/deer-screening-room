@@ -33,8 +33,9 @@ type Item struct {
 
 type cachedItem struct {
 	Item
-	RelativePath string `json:"relative_path"`
-	ModifiedUnix int64  `json:"modified_unix"`
+	RelativePath    string `json:"relative_path"`
+	ModifiedUnix    int64  `json:"modified_unix"`
+	ContractVersion int    `json:"contract_version"`
 }
 
 type probeResult struct {
@@ -55,7 +56,7 @@ type Scanner struct {
 	cache                 map[string]cachedItem
 }
 
-var videoExtensions = map[string]bool{".mp4": true, ".m4v": true, ".mov": true, ".mkv": true, ".webm": true, ".avi": true}
+const mediaContractVersion = 1
 
 func NewScanner(mediaRoot, posterRoot string) (*Scanner, error) {
 	if mediaRoot == "" || posterRoot == "" {
@@ -88,7 +89,7 @@ func (s *Scanner) Scan() ([]Item, error) {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if !videoExtensions[ext] {
+		if ext != ".mp4" {
 			return nil
 		}
 		rel, err := filepath.Rel(s.mediaRoot, path)
@@ -100,37 +101,34 @@ func (s *Scanner) Scan() ([]Item, error) {
 		if err != nil {
 			return err
 		}
-		if cached, ok := previousByPath[rel]; ok && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
+		if cached, ok := previousByPath[rel]; ok && cached.ContractVersion == mediaContractVersion && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
 			if existing, duplicate := nextPaths[cached.MediaKey]; duplicate && existing != path {
 				return fmt.Errorf("duplicate media key %q", cached.MediaKey)
 			}
-			cached.Compatibility = mediaCompatibility(ext, cached.VideoCodec, cached.AudioCodec)
 			nextPaths[cached.MediaKey] = path
 			nextCache[cached.MediaKey] = cached
 			return nil
 		}
 		probed, err := s.probe(path)
 		if err != nil {
-			probed = probeResult{}
+			fmt.Printf("media scan skipped %q: %v\n", rel, err)
+			return nil
+		}
+		title := strings.TrimSpace(probed.Title)
+		key := strings.TrimSpace(probed.MediaKey)
+		if title == "" || !validKey(key) || probed.VideoCodec != "av1" || probed.AudioCodec != "aac" {
+			fmt.Printf("media scan skipped %q: requires MP4 with AV1 video, AAC audio, title and deer_media_key metadata\n", rel)
+			return nil
 		}
 		parts := strings.Split(rel, "/")
 		studio := "未分类"
 		if len(parts) > 1 {
 			studio = parts[0]
 		}
-		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if strings.TrimSpace(probed.Title) != "" {
-			title = strings.TrimSpace(probed.Title)
-		}
-		key := strings.TrimSpace(probed.MediaKey)
-		if !validKey(key) {
-			key = mediaKey(rel)
-		}
 		if existing, ok := nextPaths[key]; ok && existing != path {
 			return fmt.Errorf("duplicate media key %q", key)
 		}
 		nextPaths[key] = path
-		compatibility := mediaCompatibility(ext, probed.VideoCodec, probed.AudioCodec)
 		posterKey := ""
 		posterPath := filepath.Join(s.posterRoot, key+".jpg")
 		if _, err := os.Stat(posterPath); err == nil {
@@ -138,7 +136,7 @@ func (s *Scanner) Scan() ([]Item, error) {
 		} else if probed.DurationMS > 0 && s.poster(path, posterPath) == nil {
 			posterKey = key
 		}
-		nextCache[key] = cachedItem{Item: Item{MediaKey: key, Studio: studio, Title: title, PosterKey: posterKey, DurationMS: probed.DurationMS, SizeBytes: info.Size(), BitRate: probed.BitRate, Width: probed.Width, Height: probed.Height, VideoCodec: probed.VideoCodec, AudioCodec: probed.AudioCodec, Compatibility: compatibility}, RelativePath: rel, ModifiedUnix: info.ModTime().Unix()}
+		nextCache[key] = cachedItem{Item: Item{MediaKey: key, Studio: studio, Title: title, PosterKey: posterKey, DurationMS: probed.DurationMS, SizeBytes: info.Size(), BitRate: probed.BitRate, Width: probed.Width, Height: probed.Height, VideoCodec: probed.VideoCodec, AudioCodec: probed.AudioCodec, Compatibility: "ready"}, RelativePath: rel, ModifiedUnix: info.ModTime().Unix(), ContractVersion: mediaContractVersion}
 		return nil
 	})
 	if err != nil {
@@ -157,13 +155,6 @@ func (s *Scanner) Scan() ([]Item, error) {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].MediaKey < items[j].MediaKey })
 	return items, nil
-}
-
-func mediaCompatibility(ext, videoCodec, audioCodec string) string {
-	if (ext == ".mp4" || ext == ".m4v" || ext == ".mov") && (videoCodec == "h264" || videoCodec == "av1") && (audioCodec == "" || audioCodec == "aac") {
-		return "ready"
-	}
-	return "unsupported"
 }
 
 func (s *Scanner) ScanWithRevision() ([]Item, string, error) {
@@ -296,10 +287,6 @@ func (s *Scanner) ffmpegPoster(source, destination string) error {
 	return exec.Command("ffmpeg", args...).Run()
 }
 
-func mediaKey(relative string) string {
-	digest := sha256.Sum256([]byte(strings.ToLower(filepath.ToSlash(relative))))
-	return base64.RawURLEncoding.EncodeToString(digest[:])
-}
 func validKey(value string) bool {
 	if len(value) != 43 {
 		return false

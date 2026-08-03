@@ -1306,3 +1306,27 @@
 - `/opt/deer-screening-room/backups/mp4-metadata-before-20260803-1`：部署前环境、Compose、Gateway inspect、容器状态和 Caddyfile 哈希备份。
 - `progress.md`：追加镜像发布、Gateway 部署、验收和回滚证据。
 - 回滚方式：进入 `/opt/deer-screening-room/app.audit-20260803-1/deploy/cloud`，执行 `DEER_VERSION=project-audit-20260803-1 docker compose --project-name deer-screening-room-cloud --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps gateway`；不使用 `-v`，不操作 Web、PostgreSQL、WireGuard、Caddy 或其他业务容器。
+
+## 2026-08-03 - Task: 收敛严格媒体规范并清理旧节点部署兼容
+### What was done
+- 媒体节点收敛为只接收带 AAC 音频、非空 `title` 和合法 `deer_media_key` 的 AV1 MP4；删除 H.264、无音轨、其他容器格式和元数据缺失回退逻辑。
+- 为目录缓存增加媒体规范版本，旧缓存升级后必须重新执行 `ffprobe`，验证通过后才恢复增量复用；不合规文件从目录跳过并记录到节点日志。
+- 删除与网页生成安装包重复且无当前引用的 UGREEN Compose、registry 覆盖、UGREEN 环境示例和节点手工 WireGuard 示例；当前 Windows Compose 与网页生成的专属节点包继续保留。
+- 同步媒体规范、架构、节点安装包说明与 NAS 部署文档；数据库迁移、API、权益模型、Range 播放和节点鉴权均未改变。
+
+### Testing
+- TDD 红灯：严格规则测试在旧实现下确认旧缓存未重新探测，缺元数据及旧格式文件仍被接受；节点包测试确认旧 README 仍声明元数据回退。
+- TDD 绿灯：`go test ./internal/media ./internal/provisioning -count=1` 通过。
+- `go test ./...`、`go test -race ./...`、`go vet ./...`：通过。
+- 前端 Vitest 3 个文件/6 项通过，生产构建通过；Playwright 11 项通过。
+- 根 Compose、云端 Compose、宿主 Caddy 组合和 Windows 节点 Compose 共 4 套配置解析通过；`git diff --check` 通过。
+- 真实 Windows 媒体根目录探测 79 个 MP4，AV1/AAC、`title` 和 `deer_media_key` 不合规计数为 0。
+
+### Notes
+- `internal/media/scanner.go`、`internal/media/scanner_test.go`：实现并验证严格 AV1/AAC MP4 与必需元数据规则，旧缓存按规范版本重新探测。
+- `internal/media/node.go`：媒体响应类型收敛为 `video/mp4`，删除其他容器 MIME 分支。
+- `internal/provisioning/provisioning.go`、`internal/provisioning/provisioning_test.go`：节点包说明改为严格媒体规范并增加回归约束。
+- `deploy/media-node/.env.ugreen.example`、`deploy/media-node/compose.registry.yaml`、`deploy/media-node/compose.ugreen.yaml`、`deploy/media-node/wg0.conf.example`：删除无当前引用的旧节点部署模板。
+- `docs/architecture.md`、`docs/deployment-fnos.md`、`docs/media-library.md`：同步严格媒体规范与唯一节点包部署入口。
+- `progress.md`：追加本轮实施、验证和回滚记录。
+- 回滚方式：回退本轮代码提交即可恢复 v0.1.3 的格式兼容与旧节点部署模板；数据库、节点身份、权益和媒体文件均不需要恢复。本条记录阶段尚未重建本机节点或 104 服务。

@@ -1,3 +1,0 @@
-services:
-  node:
-    image: ${DEER_IMAGE:-ghcr.io/lwy183178053/deer-screening-room}:${DEER_VERSION:-latest}

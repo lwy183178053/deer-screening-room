@@ -120,7 +120,7 @@ func BuildBundle(data BundleData) ([]byte, error) {
 	files := map[string]string{
 		"node.env":     fmt.Sprintf("DEER_COMPOSE_PROJECT_NAME=deer\nDEER_IMAGE=%s\nDEER_VERSION=%s\nDEER_PULL_POLICY=missing\nDEER_CONFIG_IMAGE=alpine:3.22\nDEER_WIREGUARD_IMAGE=lscr.io/linuxserver/wireguard@sha256:ac43e1226878d2611315172d6ea357a95cb326ee73124b91108118efc8666889\nTZ=Asia/Shanghai\n\nDEER_NODE_NAME=%s\nDEER_NODE_WIREGUARD_ADDRESS=%s/32\nDEER_GATEWAY_WIREGUARD_ADDRESS=%s\nDEER_GATEWAY_URL=%s\nDEER_NODE_PUBLIC_URL=http://%s:8081\nDEER_CLOUD_ENDPOINT=%s\nDEER_CLOUD_WIREGUARD_PUBLIC_KEY=%s\nDEER_WIREGUARD_PRIVATE_KEY=%s\nDEER_NODE_API_TOKEN=%s\nDEER_RELAY_TOKEN=%s\nDEER_MEDIA_ROOT=/media\nDEER_MEDIA_HOST_PATH=/CHANGE_ME\nDEER_POSTER_HOST_PATH=./posters\nDEER_SCAN_INTERVAL=10m\n", data.Image, data.Version, data.NodeName, data.NodeAddress, data.GatewayAddress, data.GatewayURL, data.NodeAddress, data.CloudEndpoint, data.CloudPublicKey, data.NodePrivateKey, data.NodeAPIToken, data.RelayToken),
 		"compose.yaml": bundleCompose(data.Image, data.Version),
-		"README.txt":   "小鹿放映室媒体节点\n\n导入此 Docker 项目后，只需要选择一次 NAS 视频目录，将它只读映射到容器 /media，并启动项目。节点从 MP4 title 元数据读取网页标题，从 deer_media_key 元数据读取稳定身份；没有元数据时回退使用现有文件名和相对路径。node.env 已包含本节点的一次性连接配置，请保留在 NAS 私有目录中。\n\n节点启动后，管理员页面会在 90 秒内显示在线；首次扫描完成后视频会出现在目录。\n",
+		"README.txt":   "小鹿放映室媒体节点\n\n导入此 Docker 项目后，只需要选择一次 NAS 视频目录，将它只读映射到容器 /media，并启动项目。节点只接收 MP4 容器、AV1 视频、AAC 音频，并从 MP4 title 元数据读取网页标题、从 deer_media_key 元数据读取稳定身份；不符合规范的文件会被跳过并记录到节点日志。node.env 已包含本节点的一次性连接配置，请保留在 NAS 私有目录中。\n\n节点启动后，管理员页面会在 90 秒内显示在线；首次扫描完成后视频会出现在目录。\n",
 	}
 	for name, content := range files {
 		file, err := writer.Create(name)
