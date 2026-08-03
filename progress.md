@@ -1077,3 +1077,22 @@
 - `docs/deployment-fnos.md`、`docs/operations.md`：补充节点删除清理范围和源视频保留说明。
 - 104 当前发布目录：`/opt/deer-screening-room/app.node-provisioning-20260803-5`；旧目录 `/opt/deer-screening-room/app.node-provisioning-20260803-1` 和旧镜像仍保留。
 - 回滚点：仅将小鹿 Compose 的 `DEER_VERSION` 恢复为 `node-provisioning-20260803-4` 并重建 Gateway/provisioner；不使用 `-v`，不操作 `windows-media` 或其他业务容器。
+
+## 2026-08-03 - Task: 移除媒体兼容视图并回退 Windows 节点测试
+### What was done
+- 移除媒体节点的 `/source -> media-view` 同步、`catalog-titles.json` 标题清单、兼容视图实现和 Windows 监听器脚本；节点现在直接把原始目录只读挂载到 `/media`。
+- 更新节点安装包模板、Windows/Linux/NAS Compose、转码脚本和媒体文档，不再生成、挂载或重建兼容视图；修正 registry Compose 覆盖中的无效 `build: null`。
+- 本机停止视图监听器，删除 `E:\BaiduNetdiskDownload\.deer-media-view` 和 `deer_media-view` 卷，保留原始视频、`deer_wireguard-data` 和其他业务容器。
+- 本机节点切换到 `ghcr.io/lwy183178053/deer-screening-room:v0.1.0`，用于直接读取原始 Windows 目录的回归测试。
+
+### Testing
+- `go test ./...`：通过。
+- Windows、绿联和 registry Compose `config --quiet`：通过。
+- `deer-node` 健康接口返回 `200`；直接扫描日志复现 `readdirent /media/悠米: input/output error`，当前只能枚举到 42 个 MP4，证明问题发生在 Docker 枚举目录阶段而非网页标题乱码。
+- 原始目录文件名审计：8 个文件名 UTF-8 长度超过 255 字节，最长 304 字节，均位于 `悠米` 目录；原始文件未重命名、复制或删除。
+
+### Notes
+- `internal/media/node.go`、`internal/media/scanner.go`、`internal/config/config.go`、`cmd/media-node/main.go`：删除兼容视图和标题清单读取。
+- `internal/media/view.go`、`internal/media/view_test.go`、`scripts/prepare-media-view.ps1`、`scripts/watch-media-view.ps1`、`scripts/watch-media-view.cmd`：删除不再使用的视图实现和监听器。
+- `deploy/media-node/*`、`internal/provisioning/provisioning.go`、`scripts/transcode-av1-720p.ps1`、`docs/*`：改为直接挂载原始目录并同步说明。
+- 回滚点：本机将 `deploy/media-node/.env` 的 `DEER_VERSION` 改回 `v0.1.1` 并恢复视图代码提交；恢复前不要删除原始目录。当前 `v0.1.0` 测试节点可单独停止，不影响 `deer-wg` 和其他容器。

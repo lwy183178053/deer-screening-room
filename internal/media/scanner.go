@@ -1,7 +1,6 @@
 package media
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -38,15 +37,6 @@ type cachedItem struct {
 	ModifiedUnix int64  `json:"modified_unix"`
 }
 
-type titleManifest struct {
-	Entries []titleManifestEntry `json:"entries"`
-}
-
-type titleManifestEntry struct {
-	Path  string `json:"path"`
-	Title string `json:"title"`
-}
-
 type probeResult struct {
 	DurationMS             int64
 	BitRate                int64
@@ -62,7 +52,6 @@ type Scanner struct {
 	scanMu                sync.Mutex
 	paths                 map[string]string
 	cache                 map[string]cachedItem
-	titles                map[string]string
 }
 
 var videoExtensions = map[string]bool{".mp4": true, ".m4v": true, ".mov": true, ".mkv": true, ".webm": true, ".avi": true}
@@ -74,18 +63,16 @@ func NewScanner(mediaRoot, posterRoot string) (*Scanner, error) {
 	if err := os.MkdirAll(posterRoot, 0o750); err != nil {
 		return nil, err
 	}
-	s := &Scanner{mediaRoot: mediaRoot, posterRoot: posterRoot, paths: map[string]string{}, cache: map[string]cachedItem{}, titles: map[string]string{}}
+	s := &Scanner{mediaRoot: mediaRoot, posterRoot: posterRoot, paths: map[string]string{}, cache: map[string]cachedItem{}}
 	s.probe = s.ffprobe
 	s.poster = s.ffmpegPoster
 	s.loadCache()
-	s.loadTitleManifest()
 	return s, nil
 }
 
 func (s *Scanner) Scan() ([]Item, error) {
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
-	s.loadTitleManifest()
 	nextPaths := map[string]string{}
 	nextCache := map[string]cachedItem{}
 	err := filepath.WalkDir(s.mediaRoot, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -111,9 +98,6 @@ func (s *Scanner) Scan() ([]Item, error) {
 		key := mediaKey(rel)
 		nextPaths[key] = path
 		if cached, ok := s.cache[key]; ok && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
-			if manifestTitle := s.titles[rel]; manifestTitle != "" {
-				cached.Title = manifestTitle
-			}
 			cached.Compatibility = mediaCompatibility(ext, cached.VideoCodec, cached.AudioCodec)
 			nextCache[key] = cached
 			return nil
@@ -128,9 +112,6 @@ func (s *Scanner) Scan() ([]Item, error) {
 			studio = parts[0]
 		}
 		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if manifestTitle := s.titles[rel]; manifestTitle != "" {
-			title = manifestTitle
-		}
 		compatibility := mediaCompatibility(ext, probed.VideoCodec, probed.AudioCodec)
 		posterKey := ""
 		posterPath := filepath.Join(s.posterRoot, key+".jpg")
@@ -221,34 +202,6 @@ func (s *Scanner) loadCache() {
 	}
 }
 
-func (s *Scanner) loadTitleManifest() {
-	titles := map[string]string{}
-	body, err := os.ReadFile(filepath.Join(s.mediaRoot, "catalog-titles.json"))
-	if err != nil {
-		s.mu.Lock()
-		s.titles = titles
-		s.mu.Unlock()
-		return
-	}
-	body = bytes.TrimPrefix(body, []byte{0xef, 0xbb, 0xbf})
-	var manifest titleManifest
-	if json.Unmarshal(body, &manifest) != nil {
-		s.mu.Lock()
-		s.titles = titles
-		s.mu.Unlock()
-		return
-	}
-	for _, entry := range manifest.Entries {
-		path := filepath.ToSlash(strings.TrimSpace(entry.Path))
-		title := strings.TrimSpace(entry.Title)
-		if path != "" && title != "" {
-			titles[path] = title
-		}
-	}
-	s.mu.Lock()
-	s.titles = titles
-	s.mu.Unlock()
-}
 func (s *Scanner) saveCache() error {
 	s.mu.RLock()
 	items := make([]cachedItem, 0, len(s.cache))

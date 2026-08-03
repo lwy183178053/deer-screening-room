@@ -118,9 +118,9 @@ func BuildBundle(data BundleData) ([]byte, error) {
 	var archive bytes.Buffer
 	writer := zip.NewWriter(&archive)
 	files := map[string]string{
-		"node.env":     fmt.Sprintf("DEER_COMPOSE_PROJECT_NAME=deer\nDEER_IMAGE=%s\nDEER_VERSION=%s\nDEER_PULL_POLICY=missing\nDEER_CONFIG_IMAGE=alpine:3.22\nDEER_WIREGUARD_IMAGE=lscr.io/linuxserver/wireguard@sha256:ac43e1226878d2611315172d6ea357a95cb326ee73124b91108118efc8666889\nTZ=Asia/Shanghai\n\nDEER_NODE_NAME=%s\nDEER_NODE_WIREGUARD_ADDRESS=%s/32\nDEER_GATEWAY_WIREGUARD_ADDRESS=%s\nDEER_GATEWAY_URL=%s\nDEER_NODE_PUBLIC_URL=http://%s:8081\nDEER_CLOUD_ENDPOINT=%s\nDEER_CLOUD_WIREGUARD_PUBLIC_KEY=%s\nDEER_WIREGUARD_PRIVATE_KEY=%s\nDEER_NODE_API_TOKEN=%s\nDEER_RELAY_TOKEN=%s\nDEER_MEDIA_SOURCE_ROOT=/source\nDEER_MEDIA_ROOT=/media\nDEER_MEDIA_HOST_PATH=/CHANGE_ME\nDEER_POSTER_HOST_PATH=./posters\nDEER_SCAN_INTERVAL=10m\n", data.Image, data.Version, data.NodeName, data.NodeAddress, data.GatewayAddress, data.GatewayURL, data.NodeAddress, data.CloudEndpoint, data.CloudPublicKey, data.NodePrivateKey, data.NodeAPIToken, data.RelayToken),
+		"node.env":     fmt.Sprintf("DEER_COMPOSE_PROJECT_NAME=deer\nDEER_IMAGE=%s\nDEER_VERSION=%s\nDEER_PULL_POLICY=missing\nDEER_CONFIG_IMAGE=alpine:3.22\nDEER_WIREGUARD_IMAGE=lscr.io/linuxserver/wireguard@sha256:ac43e1226878d2611315172d6ea357a95cb326ee73124b91108118efc8666889\nTZ=Asia/Shanghai\n\nDEER_NODE_NAME=%s\nDEER_NODE_WIREGUARD_ADDRESS=%s/32\nDEER_GATEWAY_WIREGUARD_ADDRESS=%s\nDEER_GATEWAY_URL=%s\nDEER_NODE_PUBLIC_URL=http://%s:8081\nDEER_CLOUD_ENDPOINT=%s\nDEER_CLOUD_WIREGUARD_PUBLIC_KEY=%s\nDEER_WIREGUARD_PRIVATE_KEY=%s\nDEER_NODE_API_TOKEN=%s\nDEER_RELAY_TOKEN=%s\nDEER_MEDIA_ROOT=/media\nDEER_MEDIA_HOST_PATH=/CHANGE_ME\nDEER_POSTER_HOST_PATH=./posters\nDEER_SCAN_INTERVAL=10m\n", data.Image, data.Version, data.NodeName, data.NodeAddress, data.GatewayAddress, data.GatewayURL, data.NodeAddress, data.CloudEndpoint, data.CloudPublicKey, data.NodePrivateKey, data.NodeAPIToken, data.RelayToken),
 		"compose.yaml": bundleCompose(data.Image, data.Version),
-		"README.txt":   "小鹿放映室媒体节点\n\n导入此 Docker 项目后，只需要选择一次 NAS 视频目录，将它映射到容器 /source，并启动项目。节点会自动在 /media 生成兼容视图，不复制、不删除原始视频。node.env 已包含本节点的一次性连接配置，请保留在 NAS 私有目录中。\n\n节点启动后，管理员页面会在 90 秒内显示在线；首次扫描完成后视频会出现在目录。\n",
+		"README.txt":   "小鹿放映室媒体节点\n\n导入此 Docker 项目后，只需要选择一次 NAS 视频目录，将它只读映射到容器 /media，并启动项目。节点直接扫描原始目录，不复制、不重命名或删除视频。node.env 已包含本节点的一次性连接配置，请保留在 NAS 私有目录中。\n\n节点启动后，管理员页面会在 90 秒内显示在线；首次扫描完成后视频会出现在目录。\n",
 	}
 	for name, content := range files {
 		file, err := writer.Create(name)
@@ -179,12 +179,10 @@ services:
     environment:
       DEER_ROLE: media-node
       DEER_HTTP_ADDR: ":8081"
-      DEER_MEDIA_SOURCE_ROOT: /source
       DEER_MEDIA_ROOT: /media
       DEER_POSTER_ROOT: /app/posters
     volumes:
-      - ${DEER_MEDIA_HOST_PATH:-/CHANGE_ME}:/source:ro
-      - media-view:/media
+      - ${DEER_MEDIA_HOST_PATH:-/CHANGE_ME}:/media:ro
       - ${DEER_POSTER_HOST_PATH:-./posters}:/app/posters
     depends_on: {wg: {condition: service_healthy}}
     read_only: true
@@ -192,7 +190,6 @@ services:
 
 volumes:
   wireguard-data:
-  media-view:
 `, image, version)
 }
 

@@ -20,7 +20,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	node, err := media.NewNode(media.NodeConfig{Name: cfg.NodeName, PublicURL: cfg.NodePublicURL, GatewayURL: cfg.GatewayURL, NodeAPIToken: cfg.NodeAPIToken, RelayToken: cfg.RelayToken, MediaSourceRoot: cfg.MediaSourceRoot, MediaRoot: cfg.MediaRoot, PosterRoot: cfg.PosterRoot})
+	node, err := media.NewNode(media.NodeConfig{Name: cfg.NodeName, PublicURL: cfg.NodePublicURL, GatewayURL: cfg.GatewayURL, NodeAPIToken: cfg.NodeAPIToken, RelayToken: cfg.RelayToken, MediaRoot: cfg.MediaRoot, PosterRoot: cfg.PosterRoot})
 	if err != nil {
 		log.Fatal(err)
 	}

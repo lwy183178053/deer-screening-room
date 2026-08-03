@@ -17,7 +17,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 ## 2. Configure the media path
 
-在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将源目录以只读方式挂载到 `/source`，节点自动在 `media-view` 卷的 `/media` 生成兼容视图；应用不会修改视频文件。`posters/` 是可写生成目录，丢失后可重新扫描生成。上传或解压新视频后，下一次扫描会自动更新视图。
+在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将该目录直接以只读方式挂载到 `/media`，节点扫描真实文件名；应用不会修改视频文件。`posters/` 是可写生成目录，丢失后可重新扫描生成。上传或解压新视频后，下一次扫描会自动更新目录。
 
 源目录约定：
 
@@ -31,7 +31,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。中文文件名较长时可能导致整个工作室目录返回 `input/output error`，节点扫描会失败。建议视频文件名控制在 240 个 UTF-8 字节以内；如果目录已经存在超长文件名，请先缩短文件名后再点击后台的“重新扫描”。
 
-Linux/NAS 原生文件系统可直接使用新版节点包：将 `DEER_MEDIA_HOST_PATH` 指向原始视频根目录，节点容器会在启动和每次扫描前自动生成兼容视图。Windows Docker 如果源目录含有导致 Linux bind mount 返回 `input/output error` 的超长中文目录或文件名，必须先在宿主机运行 `scripts\watch-media-view.cmd`；它会每 20 秒更新 `.deer-media-view`，节点包的 `DEER_MEDIA_HOST_PATH` 指向该视图目录。两种方式都不会复制或删除原始视频。
+Windows、Linux 和 NAS 均直接使用原始目录挂载。Windows Docker 如果源目录含有导致 Linux bind mount 返回 `input/output error` 的超长中文目录或文件名，节点扫描会失败；请先缩短实际文件名或目录名后再重新扫描。当前版本不再生成兼容视图，也不维护额外的标题清单。
 
 ## 3. Start services
 

@@ -68,38 +68,6 @@ func TestScannerCatalogAndCache(t *testing.T) {
 	}
 }
 
-func TestScannerUsesTitleManifest(t *testing.T) {
-	root := t.TempDir()
-	posters := t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, "悠米"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	videoPath := filepath.Join(root, "悠米", "media-abc.mp4")
-	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	manifest := titleManifest{Entries: []titleManifestEntry{{Path: "悠米/media-abc.mp4", Title: "包含完整介绍的原始视频名称"}}}
-	body, err := json.Marshal(manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "catalog-titles.json"), body, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	scanner, err := NewScanner(root, posters)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, VideoCodec: "h264", AudioCodec: "aac"}, nil
-	}
-	scanner.poster = func(string, string) error { return nil }
-	items, err := scanner.Scan()
-	if err != nil || len(items) != 1 || items[0].Title != "包含完整介绍的原始视频名称" {
-		t.Fatalf("items=%+v err=%v", items, err)
-	}
-}
-
 func TestScannerAcceptsAV1MP4(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
@@ -192,36 +160,6 @@ func TestNodeSkipsUnchangedInventorySync(t *testing.T) {
 	status, lastScanAt, scanError, revision := node.scanState()
 	if status != "ok" || lastScanAt.IsZero() || scanError != "" || revision == "" {
 		t.Fatalf("state=%s/%s/%q/%q", status, lastScanAt, scanError, revision)
-	}
-}
-
-func TestNodeSyncsMediaViewBeforeScan(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer server.Close()
-	source := t.TempDir()
-	view := t.TempDir()
-	longName := strings.Repeat("新", 100) + ".mp4"
-	if err := os.WriteFile(filepath.Join(source, longName), []byte("video"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	node, err := NewNode(NodeConfig{Name: "node", PublicURL: "http://node", GatewayURL: server.URL, NodeAPIToken: "node-token", RelayToken: "relay-token", MediaSourceRoot: source, MediaRoot: view, PosterRoot: t.TempDir(), HTTPClient: server.Client()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	node.scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, VideoCodec: "h264", AudioCodec: "aac"}, nil
-	}
-	node.scanner.poster = func(string, string) error { return nil }
-	if err := node.rescanAndSync(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(node.scanner.cache) != 1 {
-		t.Fatalf("cache entries=%d", len(node.scanner.cache))
-	}
-	if _, err := os.Stat(filepath.Join(view, "catalog-titles.json")); err != nil {
-		t.Fatalf("media view manifest: %v", err)
 	}
 }
 

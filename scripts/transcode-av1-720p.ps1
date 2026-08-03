@@ -3,7 +3,6 @@ param(
     [ValidateSet('Sample', 'Full', 'New')]
     [string]$Mode = 'Sample',
     [string]$SourceRoot = 'E:\BaiduNetdiskDownload',
-    [string]$ViewRoot = 'E:\BaiduNetdiskDownload\.deer-media-view',
     [string]$SampleRoot = 'E:\BaiduNetdiskDownload.av1-samples',
     [string]$MaintenanceLock = ''
 )
@@ -55,14 +54,12 @@ function Test-TargetMedia([string]$Path, [object]$Probe) {
 
 function Get-MediaFiles {
     $sourceFull = [IO.Path]::GetFullPath($SourceRoot).TrimEnd('\')
-    $viewFull = [IO.Path]::GetFullPath($ViewRoot).TrimEnd('\')
     if (-not (Test-Path -LiteralPath $sourceFull -PathType Container)) {
         throw "Source directory does not exist: $sourceFull"
     }
     return @(Get-ChildItem -LiteralPath $sourceFull -Recurse -File -ErrorAction Stop | Where-Object {
         $relative = $_.FullName.Substring($sourceFull.Length).TrimStart('\')
         $relative -and
-        $_.FullName.StartsWith($viewFull + '\', [StringComparison]::OrdinalIgnoreCase) -eq $false -and
         $VideoExtensions -contains $_.Extension.ToLowerInvariant()
     } | Sort-Object FullName)
 }
@@ -152,8 +149,6 @@ function Enter-Maintenance {
 
 function Exit-Maintenance([string]$LockPath) {
     try { Start-MediaNode } finally { if ($LockPath -and (Test-Path -LiteralPath $LockPath)) { Remove-Item -LiteralPath $LockPath -Force } }
-    & (Join-Path $PSScriptRoot 'prepare-media-view.ps1') -SourceRoot $SourceRoot -ViewRoot $ViewRoot -Quiet
-    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Could not rebuild media compatibility view.' }
 }
 
 function Replace-Source([string]$InputPath, [string]$TempPath, [object]$SourceProbe) {

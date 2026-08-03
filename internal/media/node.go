@@ -18,14 +18,13 @@ import (
 
 type NodeConfig struct {
 	Name, PublicURL, GatewayURL, NodeAPIToken, RelayToken string
-	MediaSourceRoot, MediaRoot, PosterRoot                string
+	MediaRoot, PosterRoot                                 string
 	HTTPClient                                            *http.Client
 }
 
 type Node struct {
 	config             NodeConfig
 	scanner            *Scanner
-	mediaView          *MediaView
 	stateMu            sync.RWMutex
 	scanning           bool
 	lastScanAt         time.Time
@@ -51,14 +50,7 @@ func NewNode(config NodeConfig) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	var mediaView *MediaView
-	if config.MediaSourceRoot != "" {
-		mediaView, err = NewMediaView(config.MediaSourceRoot, config.MediaRoot)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &Node{config: config, scanner: scanner, mediaView: mediaView}, nil
+	return &Node{config: config, scanner: scanner}, nil
 }
 
 func (n *Node) Handler() http.Handler {
@@ -161,11 +153,6 @@ func (n *Node) runScan(ctx context.Context) (scanErr error) {
 		}
 		n.stateMu.Unlock()
 	}()
-	if n.mediaView != nil {
-		if err := n.mediaView.Sync(); err != nil {
-			return err
-		}
-	}
 	items, revision, err := n.scanner.ScanWithRevision()
 	if err != nil {
 		return err
@@ -176,7 +163,7 @@ func (n *Node) runScan(ctx context.Context) (scanErr error) {
 	if unchanged {
 		return nil
 	}
-	total, available, err := Capacity(n.storageRoot())
+	total, available, err := Capacity(n.config.MediaRoot)
 	if err != nil {
 		total, available = 0, 0
 	}
@@ -193,19 +180,12 @@ func (n *Node) runScan(ctx context.Context) (scanErr error) {
 }
 
 func (n *Node) heartbeat(ctx context.Context) error {
-	total, available, err := Capacity(n.storageRoot())
+	total, available, err := Capacity(n.config.MediaRoot)
 	if err != nil {
 		total, available = 0, 0
 	}
 	status, lastScanAt, scanError, revision := n.scanState()
 	return n.postGateway(ctx, "/api/v1/internal/media/heartbeat", map[string]any{"node_name": n.config.Name, "base_url": n.config.PublicURL, "total_bytes": total, "available_bytes": available, "scan_status": status, "last_scan_at": lastScanAt, "scan_error": scanError, "inventory_revision": revision})
-}
-
-func (n *Node) storageRoot() string {
-	if n.config.MediaSourceRoot != "" {
-		return n.config.MediaSourceRoot
-	}
-	return n.config.MediaRoot
 }
 
 func (n *Node) scanState() (string, time.Time, string, string) {

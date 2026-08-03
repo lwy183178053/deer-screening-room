@@ -20,7 +20,6 @@ type Config struct {
 	BootstrapPassword       string
 	NodeAPIToken            string
 	RelayToken              string
-	MediaSourceRoot         string
 	MediaRoot               string
 	PosterRoot              string
 	NodeName                string
@@ -53,7 +52,6 @@ func Load() (Config, error) {
 		BootstrapPassword:       os.Getenv("DEER_BOOTSTRAP_PASSWORD"),
 		NodeAPIToken:            os.Getenv("DEER_NODE_API_TOKEN"),
 		RelayToken:              os.Getenv("DEER_RELAY_TOKEN"),
-		MediaSourceRoot:         value("DEER_MEDIA_SOURCE_ROOT", ""),
 		MediaRoot:               value("DEER_MEDIA_ROOT", "/media"),
 		PosterRoot:              value("DEER_POSTER_ROOT", "/app/posters"),
 		NodeName:                value("DEER_NODE_NAME", "fnos-media"),
