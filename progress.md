@@ -1190,3 +1190,23 @@
 - `docs/api.md`：记录节点统计字段。
 - `progress.md`：追加本轮实施与验证记录。
 - 回滚点：回退本轮提交即可移除统计字段和卡片展示；数据库表、视频文件、节点凭据和播放逻辑均未改变。
+
+## 2026-08-03 - Task: 部署节点统计到 104
+### What was done
+- 将提交 `753181d` 归档上传到 104 的独立发布目录 `/opt/deer-screening-room/app.node-counts-20260803-1`，复制运行配置并将新镜像标签固定为 `node-counts-20260803-1`。
+- 仅重建并切换小鹿 `gateway` 和 `web`；PostgreSQL、WireGuard、WireGuard provisioner、宿主 Caddy、ModelRoute、Sub2API 及其数据库/Redis 未重启或修改。
+- 统计查询确认 `nas-media-1` 当前在线但为 0 个工作室、0 个视频；`windows-media` 当前在线，有 5 个工作室、79 个视频。
+
+### Testing
+- 远端 Gateway/Web 镜像源码构建通过，Vue 生产构建通过。
+- 回环 `http://127.0.0.1:28200/api/v1/health`、公网 `/api/v1/health` 和首页 HTTPS 均返回成功（`200`）。
+- 公网视频目录返回 `79` 条，目录内容保持 AV1/AAC、`ready`。
+- 104 宿主 Caddy 保持 `active`；`80/443` 仍由宿主 Caddy 监听，Web 仍只绑定 `127.0.0.1:28200`。
+- PostgreSQL、WireGuard 和 provisioner 容器启动时间与部署前保持不变；其他业务容器状态保持运行。
+- Caddyfile 部署前后 SHA-256 一致；未执行 Caddy reload。
+
+### Notes
+- `/opt/deer-screening-room/app.node-counts-20260803-1`：本轮线上发布目录；Gateway/Web 镜像为 `deerroom-app:node-counts-20260803-1` 和 `deerroom-web:node-counts-20260803-1`。
+- `/opt/deer-screening-room/backups/node-counts-before-20260803-1`：部署前 `.env`、Caddyfile、容器状态和 inspect 备份，不含在 Git 中。
+- `progress.md`：追加线上部署证据和 NAS 统计结果。
+- 回滚方式：仅恢复旧发布目录的 Gateway/Web：Gateway 使用 `/opt/deer-screening-room/app.node-provisioning-20260803-5/deploy/cloud`，Web 使用 `/opt/deer-screening-room/app.node-provisioning-20260803-1/deploy/cloud`，分别执行 Compose `up -d --no-build --no-deps gateway` 与 `up -d --no-build --no-deps web`；不使用 `-v`，不触碰数据库、WireGuard 或其他业务。
