@@ -1134,3 +1134,21 @@
 - `docs/media-library.md`、`docs/superpowers/specs/2026-08-03-media-hash-names-design.md`：同步稳定键说明。
 - `E:\BaiduNetdiskDownload\.deer-media-map.json`：现有 79 条记录已补齐原始路径字段，不纳入 Git。
 - 回滚点：代码回退到提交 `ffdf533` 后重新构建并仅重启 `deer-node`；映射中的新增字段旧版本会忽略，原始视频文件仍保留。
+
+## 2026-08-03 - Task: 发布最新节点镜像并修正节点包默认版本
+### What was done
+- 将稳定媒体键修复镜像发布为 `ghcr.io/lwy183178053/deer-screening-room:v0.1.2`，并同步更新 `latest` 标签；两者指向同一 amd64 镜像摘要。
+- 将本地开发 Compose、云端环境示例和节点包默认版本统一为 `latest`，避免 Web 下载的 `node.env` 固定到旧版 `v0.1.0`。
+- 备份 104 当前小鹿云端环境文件，只更新 `DEER_NODE_VERSION` 为 `latest`，并仅重建 Gateway；PostgreSQL、WireGuard、Web 和其他业务容器保持运行。
+
+### Testing
+- GHCR `v0.1.2` 与 `latest` 均可通过镜像元数据检查，平台为 `linux/amd64`，摘要为 `sha256:6ead051bd79eb98e06495e3cda71e943a6b64283fc0f32e1bc1928524696d9e4`。
+- `go test ./internal/config ./internal/provisioning ./internal/httpapi`：通过；根 Compose 与云端 Compose `config --quiet`：通过；`git diff --check`：通过。
+- 104 Gateway 环境确认 `DEER_NODE_VERSION=latest`，健康接口返回成功；其他小鹿容器状态保持运行。
+
+### Notes
+- `compose.yaml`：本地 Gateway 默认节点版本改为 `latest`。
+- `deploy/cloud/.env.example`：云端配置示例改为 `DEER_NODE_VERSION=latest`。
+- `progress.md`：记录镜像发布和 104 配置更新证据。
+- 104 运行目录 `/opt/deer-screening-room/app.node-provisioning-20260803-5/deploy/cloud`：保留 `.env.before-node-version-20260803` 作为回滚副本。
+- 回滚点：将 104 `.env` 的 `DEER_NODE_VERSION` 恢复为备份值并仅重建 Gateway；镜像回滚可使用既有 GHCR 历史标签。
