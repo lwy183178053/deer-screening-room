@@ -97,19 +97,30 @@ func (s *Scanner) Scan() ([]Item, error) {
 		if !videoExtensions[ext] {
 			return nil
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
 		rel, err := filepath.Rel(s.mediaRoot, path)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		if !isHashedMediaFilename(entry.Name()) {
+			path, err = normalizeMediaFile(s.mediaRoot, path, rel, &names)
+			if err != nil {
+				return err
+			}
+			rel, err = filepath.Rel(s.mediaRoot, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
 		key := mediaKey(rel)
 		nextPaths[key] = path
 		if cached, ok := s.cache[key]; ok && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
-			if mapped, ok := mappedMediaEntry(names, entry.Name()); ok {
+			if mapped, ok := mappedMediaEntry(names, filepath.Base(path)); ok {
 				cached.Studio = mapped.Studio
 				cached.Title = mapped.Title
 			}
@@ -127,7 +138,7 @@ func (s *Scanner) Scan() ([]Item, error) {
 			studio = parts[0]
 		}
 		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if mapped, ok := mappedMediaEntry(names, entry.Name()); ok {
+		if mapped, ok := mappedMediaEntry(names, filepath.Base(path)); ok {
 			studio = mapped.Studio
 			title = mapped.Title
 		}

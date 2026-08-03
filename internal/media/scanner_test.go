@@ -46,8 +46,9 @@ func TestScannerCatalogAndCache(t *testing.T) {
 	if item.Studio != "工作室甲" || item.Title != "作品一" || item.Compatibility != "ready" || item.PosterKey == "" {
 		t.Fatalf("item=%+v", item)
 	}
-	if resolved, ok := scanner.ResolveMedia(item.MediaKey); !ok || resolved != videoPath {
-		t.Fatalf("resolved=%q ok=%v", resolved, ok)
+	expectedPath := filepath.Join(root, "工作室甲", hashedMediaFilename("工作室甲/作品一.mp4"))
+	if resolved, ok := scanner.ResolveMedia(item.MediaKey); !ok || resolved != expectedPath {
+		t.Fatalf("resolved=%q ok=%v expected=%q", resolved, ok, expectedPath)
 	}
 	if _, ok := scanner.ResolvePoster("../../etc/passwd"); ok {
 		t.Fatal("accepted traversal poster key")
@@ -92,7 +93,7 @@ func TestScannerAcceptsAV1MP4(t *testing.T) {
 func TestScannerRefreshesCachedCompatibility(t *testing.T) {
 	root := t.TempDir()
 	posters := t.TempDir()
-	videoPath := filepath.Join(root, "cached.mp4")
+	videoPath := filepath.Join(root, hashedMediaFilename("cached.mp4"))
 	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +101,7 @@ func TestScannerRefreshesCachedCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache := []cachedItem{{Item: Item{MediaKey: mediaKey("cached.mp4"), VideoCodec: "av1", AudioCodec: "aac", Compatibility: "unsupported", SizeBytes: info.Size()}, RelativePath: "cached.mp4", ModifiedUnix: info.ModTime().Unix()}}
+	cache := []cachedItem{{Item: Item{MediaKey: mediaKey(filepath.Base(videoPath)), VideoCodec: "av1", AudioCodec: "aac", Compatibility: "unsupported", SizeBytes: info.Size()}, RelativePath: filepath.Base(videoPath), ModifiedUnix: info.ModTime().Unix()}}
 	body, err := json.Marshal(cache)
 	if err != nil {
 		t.Fatal(err)
@@ -151,6 +152,41 @@ func TestScannerUsesMappedTitleForHashedFile(t *testing.T) {
 		t.Fatalf("items=%+v err=%v", items, err)
 	}
 	if items[0].Title != "作品一" || items[0].Studio != "悠米" {
+		t.Fatalf("item=%+v", items[0])
+	}
+}
+
+func TestScannerNormalizesNewMedia(t *testing.T) {
+	root := t.TempDir()
+	posters := t.TempDir()
+	studio := filepath.Join(root, "工作室甲")
+	if err := os.Mkdir(studio, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(studio, "作品一.mp4")
+	if err := os.WriteFile(source, []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := NewScanner(root, posters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner.probe = func(string) (probeResult, error) {
+		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac"}, nil
+	}
+	scanner.poster = func(string, string) error { return nil }
+	items, err := scanner.Scan()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	expected := filepath.Join(studio, hashedMediaFilename("工作室甲/作品一.mp4"))
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("source was not renamed: %v", err)
+	}
+	if resolved, ok := scanner.ResolveMedia(items[0].MediaKey); !ok || resolved != expected {
+		t.Fatalf("resolved=%q ok=%v expected=%q", resolved, ok, expected)
+	}
+	if items[0].Title != "作品一" || items[0].Studio != "工作室甲" {
 		t.Fatalf("item=%+v", items[0])
 	}
 }

@@ -80,10 +80,10 @@ func TestBuildBundleContainsOnlyRuntimeFiles(t *testing.T) {
 	if !strings.Contains(files["node.env"], "DEER_NODE_NAME=ugreen-media") || !strings.Contains(files["node.env"], "DEER_MEDIA_HOST_PATH=/CHANGE_ME") || strings.Contains(files["node.env"], "DEER_MEDIA_SOURCE_ROOT") {
 		t.Fatalf("env=%q", files["node.env"])
 	}
-	if strings.Contains(files["compose.yaml"], "replace-node-api-token") || !strings.Contains(files["compose.yaml"], "env_file: [node.env]") || strings.Contains(files["compose.yaml"], "DEER_MEDIA_SOURCE_ROOT") || strings.Contains(files["compose.yaml"], "media-view") || !strings.Contains(files["compose.yaml"], "DEER_MEDIA_HOST_PATH") || !strings.Contains(files["compose.yaml"], ":/media:ro") {
+	if strings.Contains(files["compose.yaml"], "replace-node-api-token") || !strings.Contains(files["compose.yaml"], "env_file: [node.env]") || strings.Contains(files["compose.yaml"], "DEER_MEDIA_SOURCE_ROOT") || strings.Contains(files["compose.yaml"], "media-view") || !strings.Contains(files["compose.yaml"], "DEER_MEDIA_HOST_PATH") || !strings.Contains(files["compose.yaml"], ":/media:rw") {
 		t.Fatalf("compose did not expose runtime env mapping")
 	}
-	if !strings.Contains(files["README.txt"], "只需要选择一次 NAS 视频目录") || !strings.Contains(files["README.txt"], "直接扫描原始目录") {
+	if !strings.Contains(files["README.txt"], "只需要选择一次 NAS 视频目录") || !strings.Contains(files["README.txt"], ".deer-media-map.json") {
 		t.Fatalf("readme=%q", files["README.txt"])
 	}
 }
