@@ -66,7 +66,7 @@ func Load() (Config, error) {
 		CloudWireGuardPublicKey: strings.TrimSpace(os.Getenv("DEER_CLOUD_WIREGUARD_PUBLIC_KEY")),
 		CloudEndpoint:           strings.TrimSpace(os.Getenv("DEER_CLOUD_ENDPOINT")),
 		NodeImage:               value("DEER_NODE_IMAGE", "ghcr.io/lwy183178053/deer-screening-room"),
-		NodeVersion:             value("DEER_NODE_VERSION", "v0.1.3"),
+		NodeVersion:             value("DEER_NODE_VERSION", "v0.1.4"),
 	}
 	if cfg.Role == "gateway" && cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required for gateway")

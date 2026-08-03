@@ -113,7 +113,7 @@ func BuildBundle(data BundleData) ([]byte, error) {
 		data.Image = "ghcr.io/lwy183178053/deer-screening-room"
 	}
 	if data.Version == "" {
-		data.Version = "v0.1.3"
+		data.Version = "v0.1.4"
 	}
 	var archive bytes.Buffer
 	writer := zip.NewWriter(&archive)

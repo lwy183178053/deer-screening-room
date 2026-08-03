@@ -43,7 +43,7 @@ For a private GHCR package, create a GitHub token with `read:packages` and sign 
 echo "$GHCR_READ_TOKEN" | docker login ghcr.io -u lwy183178053 --password-stdin
 ```
 
-The generated `node.env` pins the released node version. Import the generated `compose.yaml` as the Docker project and set only `DEER_MEDIA_HOST_PATH` to the NAS video directory in the project's environment editor. This generated bundle is the only supported NAS node deployment entry; the repository no longer carries separate UGREEN, registry-overlay, or manual node WireGuard templates. The file has no local `build` step and reads the node identity from the bundle:
+The generated `node.env` pins `DEER_VERSION=v0.1.4`. Import the generated `compose.yaml` as the Docker project and set only `DEER_MEDIA_HOST_PATH` to the NAS video directory in the project's environment editor. This generated bundle is the only supported NAS node deployment entry; the repository no longer carries separate UGREEN, registry-overlay, or manual node WireGuard templates. The file has no local `build` step and reads the node identity from the bundle:
 
 ```bash
 DEER_MEDIA_HOST_PATH=/vol1/1000/video

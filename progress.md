@@ -1350,3 +1350,23 @@
 - 仓库文件没有因运行残留清理发生其他变化；本机 Docker 卷、当前节点配置、源媒体和 104 数据库卷均保留。
 - 本机媒体迁移备份与双样本已按用户确认永久删除，不能从本机回滚；当前 79 个迁移后文件和 NAS 副本是现行媒体来源。
 - 代码回滚点为提交 `dc3116a` 的父提交 `79a3fbb`；本机节点运行回滚可重新拉取固定标签 `v0.1.2`。104 Gateway 回滚使用 `app.audit-20260803-1` 与镜像 `deerroom-app:project-audit-20260803-1`，只重建 Gateway 且不使用 `-v`。
+
+## 2026-08-03 - Task: 准备发布 v0.1.4 严格媒体节点镜像
+### What was done
+- 将 Gateway 生成节点安装包的默认版本、根 Compose、云端 Compose 和媒体节点环境示例统一更新为 `v0.1.4`。
+- 保持镜像仓库、节点身份、WireGuard、数据库、权益和 Range 播放接口不变；本轮版本提交只负责让后续节点包与部署固定使用严格媒体规范镜像。
+- 更新 NAS 部署文档，明确新下载的节点安装包固定使用 `v0.1.4`。
+
+### Testing
+- TDD 红灯：配置与节点包测试在旧默认值 `v0.1.3` 下按预期失败；切换默认值后定向测试通过。
+- `go test ./...`、`go test -race ./...`、`go vet ./...`：通过。
+- 前端 Vitest 3 个文件/6 项、生产构建和 Playwright 11 项：通过。
+- 根 Compose、云端 Compose、宿主 Caddy 组合和 Windows 节点 Compose 共 4 套配置解析通过；`git diff --check` 通过。
+
+### Notes
+- `compose.yaml`、`deploy/cloud/.env.example`、`deploy/cloud/compose.yaml`、`deploy/media-node/.env.example`：默认节点版本更新为 `v0.1.4`。
+- `internal/config/config.go`、`internal/config/config_test.go`：Gateway 默认节点版本及回归测试更新为 `v0.1.4`。
+- `internal/provisioning/provisioning.go`、`internal/provisioning/provisioning_test.go`：节点包缺省版本及回归测试更新为 `v0.1.4`。
+- `docs/deployment-fnos.md`：同步 NAS 节点安装包固定版本。
+- `progress.md`：追加本轮发布准备、验证和回滚记录。
+- 回滚方式：回退本轮发布提交即可恢复 `v0.1.3` 默认版本；尚未切换运行容器时不需要操作节点、Gateway、数据库或媒体文件。

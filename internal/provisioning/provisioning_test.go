@@ -114,7 +114,7 @@ func TestBuildBundleNormalizesWireGuardCIDR(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(content), "DEER_NODE_WIREGUARD_ADDRESS=10.77.0.2/32\n") || strings.Contains(string(content), "10.77.0.2/32/32") || !strings.Contains(string(content), "DEER_VERSION=v0.1.3\n") {
+		if !strings.Contains(string(content), "DEER_NODE_WIREGUARD_ADDRESS=10.77.0.2/32\n") || strings.Contains(string(content), "10.77.0.2/32/32") || !strings.Contains(string(content), "DEER_VERSION=v0.1.4\n") {
 			t.Fatalf("env=%q", content)
 		}
 		return

@@ -27,7 +27,7 @@ func TestMediaNodeDefaultsToPinnedBundleVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.NodeVersion != "v0.1.3" {
+	if cfg.NodeVersion != "v0.1.4" {
 		t.Fatalf("node version=%q", cfg.NodeVersion)
 	}
 }
