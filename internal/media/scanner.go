@@ -48,6 +48,7 @@ type Scanner struct {
 	mediaRoot, posterRoot string
 	probe                 func(string) (probeResult, error)
 	poster                func(string, string) error
+	names                 mediaNameMap
 	mu                    sync.RWMutex
 	scanMu                sync.Mutex
 	paths                 map[string]string
@@ -64,6 +65,11 @@ func NewScanner(mediaRoot, posterRoot string) (*Scanner, error) {
 		return nil, err
 	}
 	s := &Scanner{mediaRoot: mediaRoot, posterRoot: posterRoot, paths: map[string]string{}, cache: map[string]cachedItem{}}
+	names, err := loadMediaNameMap(mediaRoot)
+	if err != nil {
+		return nil, err
+	}
+	s.names = names
 	s.probe = s.ffprobe
 	s.poster = s.ffmpegPoster
 	s.loadCache()
@@ -73,9 +79,14 @@ func NewScanner(mediaRoot, posterRoot string) (*Scanner, error) {
 func (s *Scanner) Scan() ([]Item, error) {
 	s.scanMu.Lock()
 	defer s.scanMu.Unlock()
+	names, err := loadMediaNameMap(s.mediaRoot)
+	if err != nil {
+		return nil, err
+	}
+	s.names = names
 	nextPaths := map[string]string{}
 	nextCache := map[string]cachedItem{}
-	err := filepath.WalkDir(s.mediaRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(s.mediaRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -98,6 +109,10 @@ func (s *Scanner) Scan() ([]Item, error) {
 		key := mediaKey(rel)
 		nextPaths[key] = path
 		if cached, ok := s.cache[key]; ok && cached.ModifiedUnix == info.ModTime().Unix() && cached.SizeBytes == info.Size() {
+			if mapped, ok := mappedMediaEntry(names, entry.Name()); ok {
+				cached.Studio = mapped.Studio
+				cached.Title = mapped.Title
+			}
 			cached.Compatibility = mediaCompatibility(ext, cached.VideoCodec, cached.AudioCodec)
 			nextCache[key] = cached
 			return nil
@@ -112,6 +127,10 @@ func (s *Scanner) Scan() ([]Item, error) {
 			studio = parts[0]
 		}
 		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if mapped, ok := mappedMediaEntry(names, entry.Name()); ok {
+			studio = mapped.Studio
+			title = mapped.Title
+		}
 		compatibility := mediaCompatibility(ext, probed.VideoCodec, probed.AudioCodec)
 		posterKey := ""
 		posterPath := filepath.Join(s.posterRoot, key+".jpg")

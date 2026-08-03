@@ -122,6 +122,39 @@ func TestScannerRefreshesCachedCompatibility(t *testing.T) {
 	}
 }
 
+func TestScannerUsesMappedTitleForHashedFile(t *testing.T) {
+	root := t.TempDir()
+	posters := t.TempDir()
+	studio := filepath.Join(root, "悠米")
+	if err := os.Mkdir(studio, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	name := hashedMediaFilename("悠米/作品一.mp4")
+	if err := os.WriteFile(filepath.Join(studio, name), []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveMediaNameMap(root, mediaNameMap{Version: 1, Files: map[string]mediaNameEntry{
+		name: {Studio: "悠米", OriginalName: "作品一.mp4", Title: "作品一"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	scanner, err := NewScanner(root, posters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanner.probe = func(string) (probeResult, error) {
+		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac"}, nil
+	}
+	scanner.poster = func(string, string) error { return nil }
+	items, err := scanner.Scan()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	if items[0].Title != "作品一" || items[0].Studio != "悠米" {
+		t.Fatalf("item=%+v", items[0])
+	}
+}
+
 func TestNodeSkipsUnchangedInventorySync(t *testing.T) {
 	var syncRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
