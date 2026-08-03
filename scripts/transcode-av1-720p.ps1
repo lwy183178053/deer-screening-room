@@ -123,11 +123,11 @@ function Stop-MediaNode {
     if ($script:ComposeArgs.Count -eq 0 -or -not (Get-Command docker -ErrorAction SilentlyContinue)) {
         throw 'Docker Compose media-node configuration is required for Full/New mode.'
     }
-    $container = (& docker compose @script:ComposeArgs ps -q media-node 2>$null).Trim()
+    $container = (& docker compose @script:ComposeArgs ps -q node 2>$null).Trim()
     if (-not $container) { return }
     $running = (& docker inspect -f '{{.State.Running}}' $container 2>$null).Trim()
     if ($running -eq 'true') {
-        & docker compose @script:ComposeArgs stop media-node | Out-Host
+        & docker compose @script:ComposeArgs stop node | Out-Host
         if ($LASTEXITCODE -ne 0) { throw 'Could not stop media-node.' }
         $script:MediaNodeWasRunning = $true
     }
@@ -135,7 +135,7 @@ function Stop-MediaNode {
 
 function Start-MediaNode {
     if (-not $script:MediaNodeWasRunning) { return }
-    & docker compose @script:ComposeArgs start media-node | Out-Host
+    & docker compose @script:ComposeArgs start node | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Could not restart media-node.' }
 }
 

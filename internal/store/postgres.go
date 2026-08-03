@@ -34,7 +34,19 @@ func Open(ctx context.Context, databaseURL string) (*Postgres, error) {
 func (s *Postgres) Close() { s.pool.Close() }
 
 func (s *Postgres) Migrate(ctx context.Context) error {
-	if _, err := s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	// Keep initialization serialized across gateway processes sharing a database.
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtext('deerroom.schema_migrations'))`); err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = conn.Exec(context.Background(), `SELECT pg_advisory_unlock(hashtext('deerroom.schema_migrations'))`)
+	}()
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
 	entries, err := migrationFiles.ReadDir("migrations")
@@ -45,7 +57,7 @@ func (s *Postgres) Migrate(ctx context.Context) error {
 	for _, entry := range entries {
 		version := entry.Name()
 		var exists bool
-		if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&exists); err != nil {
+		if err := conn.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&exists); err != nil {
 			return err
 		}
 		if exists {
@@ -55,7 +67,7 @@ func (s *Postgres) Migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		tx, err := s.pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return err
 		}

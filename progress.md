@@ -1210,3 +1210,26 @@
 - `/opt/deer-screening-room/backups/node-counts-before-20260803-1`：部署前 `.env`、Caddyfile、容器状态和 inspect 备份，不含在 Git 中。
 - `progress.md`：追加线上部署证据和 NAS 统计结果。
 - 回滚方式：仅恢复旧发布目录的 Gateway/Web：Gateway 使用 `/opt/deer-screening-room/app.node-provisioning-20260803-5/deploy/cloud`，Web 使用 `/opt/deer-screening-room/app.node-provisioning-20260803-1/deploy/cloud`，分别执行 Compose `up -d --no-build --no-deps gateway` 与 `up -d --no-build --no-deps web`；不使用 `-v`，不触碰数据库、WireGuard 或其他业务。
+
+## 2026-08-03 - Task: 项目整理与潜在问题修复
+### What was done
+- 对 Go、媒体节点、节点安装包、脚本、前端和 Compose 配置做了静态检查，确认当前播放链路仍为 HTTP Range，未发现活跃的 WebRTC、兼容视图或 `/source` 业务残留。
+- 修复 PostgreSQL 多进程同时启动时的迁移竞态：`Migrate()` 现在在同一连接上使用数据库 advisory lock，保留原有逐迁移事务和数据库结构。
+- 修复 AV1 转码维护脚本查找旧服务名的问题，维护阶段现在实际停止并恢复当前 Compose 的 `node` 服务；同步修正运维文档中的服务名。
+- 将节点示例配置中的项目名和默认镜像版本统一为 `deer`/`latest`，避免新节点包继承历史长项目名或旧版本。
+
+### Testing
+- 未加锁时两个独立进程并发初始化全新 PostgreSQL 稳定复现 `pg_type_typname_nsp_index` 冲突；加锁后同样场景不再出现迁移冲突。
+- 使用独立全新数据库运行 `internal/store` 和 `internal/httpapi` 集成测试：均通过；并发共享同一测试库时仅出现测试数据互相清空导致的断言失败，测试文档已要求使用不同数据库 URL。
+- `go test ./...`、`go test -race ./...`、`go vet ./...`：通过。
+- `web`: Vitest 3 个文件/6 项通过，生产构建通过；Playwright 11 项通过。
+- `scripts/normalize-media-names.tests.ps1`：通过；转码脚本 PowerShell 解析通过。
+- 根 Compose、云端 Compose、宿主 Caddy 覆盖、Windows 节点和绿联节点 Compose `config --quiet`：通过；`git diff --check`：通过。
+
+### Notes
+- `internal/store/postgres.go`：增加跨进程迁移锁；回滚点为移除本轮 advisory lock 代码并恢复原 `Migrate()` 实现。
+- `scripts/transcode-av1-720p.ps1`：将维护脚本服务名从历史 `media-node` 改为当前 `node`。
+- `docs/operations.md`：同步当前转码维护服务名。
+- `deploy/media-node/.env.example`、`deploy/media-node/.env.ugreen.example`：统一短项目名和 `latest` 默认版本。
+- `progress.md`：记录本轮检查、修复和验证证据。
+- 回滚方式：回退本轮整理提交即可；不需要删除数据库、媒体文件、节点凭据或线上备份。本轮未部署 104，也未重启任何线上容器。
