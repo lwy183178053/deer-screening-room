@@ -1287,3 +1287,22 @@
 - `progress.md`：追加本轮实施、验证、生产基线与回滚记录。
 - `E:\BaiduNetdiskDownload.metadata-backup-20260803`：仓库外完整原片、旧映射和 `migration-snapshot.json` 备份；不纳入 Git。
 - 回滚方式：先执行 `docker compose --project-name deer-screening-room-media-1 --file deploy/media-node/compose.yaml --env-file deploy/media-node/.env down`（不使用 `-v`），将当前媒体目录移到隔离位置后从 `E:\BaiduNetdiskDownload.metadata-backup-20260803` 恢复原目录；代码回退到 `c04f52e`，本机节点固定旧镜像 `media-hash-20260803` 后重新启动。104 尚未在本条记录阶段更新。
+
+## 2026-08-03 - Task: 发布 v0.1.3 镜像并部署 104 Gateway
+### What was done
+- 推送 `codex/webrtc-p2p` 的功能提交与 `v0.1.3` 标签，通过现有 GitHub Actions 发布节点镜像，并同步更新 `latest`。
+- 在 104 建立独立发布目录和部署前备份，复用现行运行配置，将节点安装包版本固定为 `v0.1.3`；仅重建小鹿 Gateway。
+- Web、PostgreSQL、WireGuard、WireGuard provisioner、宿主机 Caddy、ModelRoute、Sub2API 及其数据库和 Redis 均未重启或修改。
+
+### Testing
+- GitHub Actions 发布任务成功；`v0.1.3` 与 `latest` 的 OCI 摘要均为 `sha256:e73eda2b0912f4ffaf8cbc30cf26b3726e26581c5f25ba99ab22a73c1c4942d0`，运行平台为 `linux/amd64`。
+- Gateway 镜像为 `deerroom-app:v0.1.3`，运行环境中的 `DEER_NODE_VERSION` 为 `v0.1.3`，容器状态为运行且重启计数为 0。
+- 迁移前后 `windows-media` 的 79 个可用视频 ID、媒体键、工作室、标题及权益计数逐条一致；当前为 79 个唯一媒体键、5 个工作室、2 条权益、0 个哈希标题。
+- 本机回环健康、公网健康和公网首页均返回 `200`；Gateway 切换瞬间出现一次短暂 `502`，随后自动恢复并通过连续验收。
+- 除 Gateway 外的 13 个小鹿及其他业务容器启动记录与部署前完全一致；宿主机 Caddyfile SHA-256 前后相同，未 reload Caddy。
+
+### Notes
+- `/opt/deer-screening-room/app.mp4-metadata-20260803-1`：本轮 104 发布目录，运行配置权限沿用部署前版本。
+- `/opt/deer-screening-room/backups/mp4-metadata-before-20260803-1`：部署前环境、Compose、Gateway inspect、容器状态和 Caddyfile 哈希备份。
+- `progress.md`：追加镜像发布、Gateway 部署、验收和回滚证据。
+- 回滚方式：进入 `/opt/deer-screening-room/app.audit-20260803-1/deploy/cloud`，执行 `DEER_VERSION=project-audit-20260803-1 docker compose --project-name deer-screening-room-cloud --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps gateway`；不使用 `-v`，不操作 Web、PostgreSQL、WireGuard、Caddy 或其他业务容器。
