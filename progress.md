@@ -1096,3 +1096,19 @@
 - `internal/media/view.go`、`internal/media/view_test.go`、`scripts/prepare-media-view.ps1`、`scripts/watch-media-view.ps1`、`scripts/watch-media-view.cmd`：删除不再使用的视图实现和监听器。
 - `deploy/media-node/*`、`internal/provisioning/provisioning.go`、`scripts/transcode-av1-720p.ps1`、`docs/*`：改为直接挂载原始目录并同步说明。
 - 回滚点：本机将 `deploy/media-node/.env` 的 `DEER_VERSION` 改回 `v0.1.1` 并恢复视图代码提交；恢复前不要删除原始目录。当前 `v0.1.0` 测试节点可单独停止，不影响 `deer-wg` 和其他容器。
+
+## 2026-08-03 - Task: 规划媒体哈希文件名与标题映射迁移
+### What was done
+- 明确保留工作室目录、仅将视频文件改为短哈希名，并在媒体根目录维护 `.deer-media-map.json` 恢复原始显示标题。
+- 明确 Windows Docker 无法在容器内枚举超长文件名，计划由 Windows 宿主机预处理器完成首次和新增文件标准化，Linux/NAS 节点处理可枚举的新文件。
+- 形成设计说明和分阶段实施计划，包含单文件测试、样本迁移、79 个文件全量迁移、缓存清理、节点验证和回滚点。
+
+### Testing
+- 仅完成计划文档自检：无代码或媒体文件改动；`git diff --check` 通过。
+- 实施前必须按计划先运行失败测试，再进入代码和实际文件迁移。
+
+### Notes
+- `docs/superpowers/specs/2026-08-03-media-hash-names-design.md`：记录映射格式、平台边界和回滚约束。
+- `docs/superpowers/plans/2026-08-03-media-hash-names.md`：记录分任务实现、测试、部署和迁移步骤。
+- `progress.md`：追加本轮计划落点。
+- 回滚方式：本轮无运行代码和媒体文件改动；删除本轮计划文档即可回到上一提交。实施阶段按计划使用映射表恢复文件名并恢复旧 Compose/镜像。
