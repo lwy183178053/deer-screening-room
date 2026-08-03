@@ -104,4 +104,11 @@ if (-not $SkipTranscode) {
     }
 }
 
+$normalizeScript = Join-Path $PSScriptRoot 'normalize-media-names.ps1'
+Write-Host 'Standardizing media filenames and updating the title map.'
+& $normalizeScript -SourceRoot $SourceRoot
+if ($LASTEXITCODE -ne 0) {
+    throw 'Archive extraction succeeded, but media filename normalization failed.'
+}
+
 Write-Host 'All archives were extracted successfully and deleted.' -ForegroundColor Green
