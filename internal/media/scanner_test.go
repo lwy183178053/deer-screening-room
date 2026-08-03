@@ -131,7 +131,8 @@ func TestScannerUsesMappedTitleForHashedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := hashedMediaFilename("悠米/作品一.mp4")
-	if err := os.WriteFile(filepath.Join(studio, name), []byte("video"), 0o600); err != nil {
+	videoPath := filepath.Join(studio, name)
+	if err := os.WriteFile(videoPath, []byte("video"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := saveMediaNameMap(root, mediaNameMap{Version: 1, Files: map[string]mediaNameEntry{
@@ -139,12 +140,25 @@ func TestScannerUsesMappedTitleForHashedFile(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
+	info, err := os.Stat(videoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := []cachedItem{{Item: Item{MediaKey: mediaKey("悠米/" + name), Studio: "悠米", Title: "media-old-title", SizeBytes: info.Size(), VideoCodec: "av1", AudioCodec: "aac"}, RelativePath: "悠米/" + name, ModifiedUnix: info.ModTime().Unix()}}
+	body, err := json.Marshal(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(posters, "catalog-cache.json"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	scanner, err := NewScanner(root, posters)
 	if err != nil {
 		t.Fatal(err)
 	}
 	scanner.probe = func(string) (probeResult, error) {
-		return probeResult{DurationMS: 1000, Width: 1280, Height: 720, VideoCodec: "av1", AudioCodec: "aac"}, nil
+		t.Fatal("mapped cached media should not be probed")
+		return probeResult{}, nil
 	}
 	scanner.poster = func(string, string) error { return nil }
 	items, err := scanner.Scan()

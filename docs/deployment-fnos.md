@@ -17,7 +17,7 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
 
 ## 2. Configure the media path
 
-在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将该目录直接以只读方式挂载到 `/media`，节点扫描真实文件名；应用不会修改视频文件。`posters/` 是可写生成目录，丢失后可重新扫描生成。上传或解压新视频后，下一次扫描会自动更新目录。
+在宿主机确认视频根目录的真实路径，将它写入节点环境中的 `DEER_MEDIA_HOST_PATH`。Compose 将该目录挂载到 `/media`，节点在文件大小稳定后把视频标准化为短哈希名，并在根目录写入 `.deer-media-map.json`；工作室目录不变，网页仍显示原始标题。`posters/` 是可写生成目录，丢失后可重新扫描生成。Windows 节点首次迁移和后续解压流程使用 `scripts\normalize-media-names.ps1`，Linux/NAS 节点可由扫描器处理可枚举的新文件。
 
 源目录约定：
 
@@ -29,9 +29,9 @@ cp wg0.conf.example wireguard/wg_confs/wg0.conf
     作品二.mp4
 ```
 
-Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。中文文件名较长时可能导致整个工作室目录返回 `input/output error`，节点扫描会失败。建议视频文件名控制在 240 个 UTF-8 字节以内；如果目录已经存在超长文件名，请先缩短文件名后再点击后台的“重新扫描”。
+Windows Docker 节点还需要注意文件名兼容性：Linux 容器读取 Windows bind mount 时，单个文件名的 UTF-8 长度不能超过 255 字节。中文文件名较长时可能导致整个工作室目录返回 `input/output error`，所以首次启动节点前先运行标准化脚本；脚本使用 Windows 文件 API 改名，容器随后只看到短哈希名。
 
-Windows、Linux 和 NAS 均直接使用原始目录挂载。Windows Docker 如果源目录含有导致 Linux bind mount 返回 `input/output error` 的超长中文目录或文件名，节点扫描会失败；请先缩短实际文件名或目录名后再重新扫描。当前版本不再生成兼容视图，也不维护额外的标题清单。
+Windows、Linux 和 NAS 均使用同一媒体根目录和映射格式。当前版本不生成兼容视图，也不复制视频；只在原工作室目录内改名，并维护 `.deer-media-map.json`。
 
 ## 3. Start services
 
