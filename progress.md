@@ -1370,3 +1370,25 @@
 - `docs/deployment-fnos.md`：同步 NAS 节点安装包固定版本。
 - `progress.md`：追加本轮发布准备、验证和回滚记录。
 - 回滚方式：回退本轮发布提交即可恢复 `v0.1.3` 默认版本；尚未切换运行容器时不需要操作节点、Gateway、数据库或媒体文件。
+
+## 2026-08-03 - Task: 发布 v0.1.4 并部署 Windows 节点与 104 Gateway
+### What was done
+- 推送 `v0.1.4` 标签并通过 GitHub Actions 发布 GHCR 镜像，同时更新 `latest`；NAS 节点未远程操作。
+- 当前 Windows 节点保留原节点身份、媒体目录、封面缓存和 WireGuard，仅将 `deer-node` 更新为 `v0.1.4`；`deer-wg` 未重建。
+- 在 104 创建独立发布目录 `/opt/deer-screening-room/app.v0.1.4-20260803-1`，复用权限受限的运行配置与 WireGuard 配置，仅重建 Gateway，使新下载节点包固定使用 `v0.1.4`。
+- 本机与 104 的回滚资源统一收敛为 `v0.1.3`；删除本机 `v0.1.2` 镜像和 104 的旧 `project-audit` 回滚目录及镜像。
+
+### Testing
+- GHCR `v0.1.4` 与 `latest` 的 OCI 摘要均为 `sha256:ceeaa34ef17f9a41c81d015cf2309e21f0365d3974b4c17f4df87c2a5247f8d9`，`linux/amd64` manifest 摘要均为 `sha256:23082a3f22348176c426081a98e58b1d7a61831d40f658a60b745ff2bca45fcc`。
+- Windows `deer-node` 运行 `v0.1.4` 且重启次数为 0；节点健康接口成功，WireGuard 有最近握手，`deer-wg` 启动时间与更新前一致。
+- Windows 目录缓存为 79 条，79 条均为严格规范版本、`ready`、AV1/AAC；真实媒体 Range 请求返回 `206 Partial Content`、1024 字节和 `Content-Range: bytes 0-1023/558673160`。
+- 104 Gateway 运行 `v0.1.4` 且重启次数为 0，运行环境中的 `DEER_NODE_VERSION` 为 `v0.1.4`；Windows 与 NAS 两个节点均在线且最近 90 秒内有心跳。
+- 生产目录当前为 Windows 79 个视频/5 个工作室、NAS 21 个视频/4 个工作室，共 100 个可用且 `ready` 的视频，节点不合规视频计数为 0；原有 9 条权益记录保留。
+- 104 回环健康、公网健康和公网首页均返回 `200`；Web、PostgreSQL、WireGuard、WireGuard provisioner、ModelRoute、Sub2API 及其数据库和 Redis 的启动时间与重启次数未变化。
+- Caddyfile SHA-256 仍为 `4d598e995f68224c2a717e03c853cbab544249904cbdb73b912efc6229e921a6`，本轮未 reload Caddy。
+
+### Notes
+- `progress.md`：追加 `v0.1.4` 镜像发布、Windows 节点和 104 Gateway 部署证据。
+- `/opt/deer-screening-room/app.v0.1.4-20260803-1`：104 当前发布目录；`/opt/deer-screening-room/app.mp4-metadata-20260803-1`：唯一保留的 `v0.1.3` 回滚目录。
+- 本机忽略的 `deploy/media-node/.env` 已固定 `v0.1.4`；NAS 保留现有节点身份和配置，由用户在面板将版本改为 `v0.1.4` 后拉取重建。
+- 回滚方式：Windows 将 `DEER_VERSION` 攁回 `v0.1.3` 并仅重建 `node`；104 进入 `app.mp4-metadata-20260803-1/deploy/cloud`，使用该目录的 `.env` 和两份 Compose 文件执行 `up -d --no-build --no-deps gateway`，不使用 `-v`，不操作其他服务。
