@@ -1233,3 +1233,21 @@
 - `deploy/media-node/.env.example`、`deploy/media-node/.env.ugreen.example`：统一短项目名和 `latest` 默认版本。
 - `progress.md`：记录本轮检查、修复和验证证据。
 - 回滚方式：回退本轮整理提交即可；不需要删除数据库、媒体文件、节点凭据或线上备份。本轮未部署 104，也未重启任何线上容器。
+
+## 2026-08-03 - Task: 部署项目整理修复到 104
+### What was done
+- 将提交 `f3e99e0` 归档上传到独立发布目录 `/opt/deer-screening-room/app.audit-20260803-1`，复制现行云端运行配置和 WireGuard 配置。
+- 在 104 构建 `deerroom-app:project-audit-20260803-1`，仅重建小鹿 Compose 项目的 `gateway` 服务；Web、PostgreSQL、WireGuard、WireGuard provisioner 及其他业务容器保持原容器运行。
+- 迁移锁修复已在线生效，数据库迁移记录为 5 条；两个媒体节点均保持在线。
+
+### Testing
+- 104 回环 `http://127.0.0.1:28200/api/v1/health` 返回 `200`；`https://xiaolu.lwylink.xyz/api/v1/health` 返回 `200`。
+- 公网目录请求返回 79 条视频；节点状态查询显示 `nas-media-1` 和 `windows-media` 在线。
+- 新 Gateway 镜像为 `deerroom-app:project-audit-20260803-1`，Web 仍为 `deerroom-web:node-counts-20260803-1`。
+- Web、PostgreSQL、WireGuard、provisioner 与 ModelRoute/Sub2API 容器启动时间保持部署前记录；未执行 Caddy reload。
+
+### Notes
+- `/opt/deer-screening-room/app.audit-20260803-1`：本轮线上发布目录。
+- `/opt/deer-screening-room/backups/project-audit-before-20260803-1`：部署前环境文件、Gateway inspect 和容器状态备份，不含在 Git 中。
+- `progress.md`：追加线上部署证据和回滚点。
+- 回滚方式：在 104 使用旧发布目录 `/opt/deer-screening-room/app.node-counts-20260803-1/deploy/cloud`，执行 `DEER_VERSION=node-counts-20260803-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps gateway`；不使用 `-v`，不操作 Web、数据库、WireGuard 或其他业务容器。
