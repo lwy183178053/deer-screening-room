@@ -1152,3 +1152,18 @@
 - `progress.md`：记录镜像发布和 104 配置更新证据。
 - 104 运行目录 `/opt/deer-screening-room/app.node-provisioning-20260803-5/deploy/cloud`：保留 `.env.before-node-version-20260803` 作为回滚副本。
 - 回滚点：将 104 `.env` 的 `DEER_NODE_VERSION` 恢复为备份值并仅重建 Gateway；镜像回滚可使用既有 GHCR 历史标签。
+
+## 2026-08-03 - Task: 清理历史缓存残留
+### What was done
+- 对节点 `posters` 缓存与当前 `catalog-cache.json` 做引用比对，删除 85 个未被 79 条现行媒体记录引用的旧 JPG，共释放约 1.6 MB。
+- 删除 `internal/auth`、`internal/bandwidth`、`internal/zpay` 三个空目录；未删除历史进度、迁移文件、部署模板或业务代码。
+
+### Testing
+- 封面缓存核验：目录缓存 79 条、JPG 79 个、缺失引用 0、未引用文件 0。
+- `go test ./...`：通过；根、云端和绿联 Compose `config --quiet`：通过；`git diff --check`：通过。
+
+### Notes
+- `deploy/media-node/posters/*.jpg`：仅删除未被当前目录缓存引用的历史封面，现行封面全部保留。
+- `internal/auth`、`internal/bandwidth`、`internal/zpay`：删除空目录，不包含可执行代码。
+- `progress.md`：记录清理范围和验证结果。
+- 回滚方式：现行封面缺失时执行管理员重新扫描，节点会按现有扫描逻辑重新生成；本轮未改变视频、数据库或播放逻辑。
