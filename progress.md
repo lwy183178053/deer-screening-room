@@ -1429,3 +1429,21 @@
 - `docs/credits.md`：记录兑换说明链接的新标签页及移动端断行行为。
 - `progress.md`：追加本轮实现、测试和回滚记录。
 - 回滚方式：回退本轮前端提交并仅重建 Web 服务；不需要操作 Gateway、数据库、WireGuard、节点或媒体文件。
+
+## 2026-08-04 - Task: 部署兑换说明链接前端修复
+### What was done
+- 在 104 创建独立发布目录 `app.web-links-20260804-1`，保留原 Web 容器检查点和旧 Web 镜像。
+- 只构建并重建 `deer-screening-room-cloud-web-1`；Gateway、PostgreSQL、WireGuard、WireGuard provisioner、Caddy 和其他业务容器未重启或修改。
+- 将生产 Web 更新为包含兑换说明可点击链接和移动端断行的前端构建。
+
+### Testing
+- 104 Web Compose 配置校验和 `build web` 通过，镜像摘要为 `sha256:c7e26cfd144a1cf84436672bc25c6e988a3ab87546f6a8db6ff3d3a254bd6c8f`。
+- 回环首页、回环 `/api/v1/health` 和 `https://xiaolu.lwylink.xyz/` 均返回 `200`。
+- 真实域名登录后，390px 手机视口验证购买链接的 HTTPS 协议、`target="_blank"`、`rel="noopener noreferrer"` 和无横向溢出。
+- Web 重建后重启次数为 0；Gateway、PostgreSQL、WireGuard、provisioner 启动时间和重启次数未变化；宿主 Caddyfile SHA-256 仍为 `4d598e995f68224c2a717e03c853cbab544249904cbdb73b912efc6229e921a6`。
+
+### Notes
+- `/opt/deer-screening-room/app.web-links-20260804-1`：104 本轮 Web 发布目录。
+- `/opt/deer-screening-room/app.web-links-20260804-1/deploy/cloud/web-before.json`：部署前 Web 容器检查点。
+- `progress.md`：追加生产部署、镜像摘要和验收证据。
+- 回滚方式：在新发布目录执行 `DEER_VERSION=node-counts-20260803-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
