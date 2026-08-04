@@ -10,6 +10,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $TargetLongEdge = 1280
 $TargetAudioBitrate = 128000
+$MinimumMeasuredAudioBitrate = 96000
+$MaximumMeasuredAudioBitrate = 136000
 $VideoExtensions = @('.mp4')
 $script:MediaNodeWasRunning = $false
 $script:ComposeArgs = @()
@@ -63,7 +65,7 @@ function Test-TargetMedia([string]$Path, [object]$Probe) {
     if ($video.codec_name -ne 'av1' -or [math]::Max([int]$video.width, [int]$video.height) -gt $TargetLongEdge) { return $false }
     foreach ($audio in @($Probe.streams | Where-Object { $_.codec_type -eq 'audio' })) {
         if ($audio.codec_name -ne 'aac' -or [int]$audio.channels -ne 2 -or [int]$audio.sample_rate -ne 48000) { return $false }
-        if ([int]$audio.bit_rate -lt 120000 -or [int]$audio.bit_rate -gt 136000) { return $false }
+        if ([int]$audio.bit_rate -lt $MinimumMeasuredAudioBitrate -or [int]$audio.bit_rate -gt $MaximumMeasuredAudioBitrate) { return $false }
     }
     return $true
 }

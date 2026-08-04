@@ -1486,3 +1486,24 @@
 - `/opt/deer-screening-room/app.redeem-pagination-20260804-1/deploy/cloud/web-before.json`：部署前 Web 容器检查点。
 - `progress.md`：追加生产部署、分页实测和服务隔离证据。
 - 回滚方式：在本轮发布目录执行 `DEER_VERSION=redeem-links-20260804-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
+
+## 2026-08-05 - Task: 处理学姐学妹工作室新增媒体
+### What was done
+- 仅处理 `E:\BaiduNetdiskDownload\学姐学妹`：22 个 7z 全部测试、解压成功后删除，得到并处理 21 个 MP4；其他工作室未执行解压或转码。
+- 将 21 个视频转换为最长边不超过 1280 的 AV1 MP4，音频保持 AAC-LC、48 kHz、双声道和名义 128 kbps，并写入显示标题与稳定媒体键。
+- 修正转码验收对 AAC 平均码率的误判：编码目标仍为 128 kbps，实测验收范围调整为 96-136 kbps，以兼容静音或低复杂度音频。
+- 本机 `deer-node` 原本未运行，本轮保持原状态；处理完成后清除了本轮临时日志。
+
+### Testing
+- 实际批次输出 `Encoding 21/21`、`AV1 conversion completed: 21 file(s).`，错误日志为空。
+- PowerShell 语法检查与元数据脚本测试通过；`New` 模式复扫结果为 0 个待转换、0 个待更新元数据。
+- 对 21 个 MP4 全量执行 ffprobe：AV1、最长边不超过 1280、AAC-LC 双声道 48 kHz、音频平均码率 109.7-128.9 kbps、标题元数据和 43 字符媒体键全部通过。
+- 21 个媒体键内部唯一，并与媒体根目录其余 55 个 MP4 的媒体键只读比对无冲突。
+- 目标目录内压缩包、转码临时文件、原片临时备份、维护锁和处理日志均为 0。
+
+### Notes
+- `scripts/transcode-av1-720p.ps1`：将 AAC 实测平均码率验收范围调整为 96-136 kbps，保留 128 kbps 编码参数。
+- `docs/local-archive-extraction.md`：说明低复杂度音频的实测平均码率可能低于名义 128 kbps。
+- `E:\BaiduNetdiskDownload\学姐学妹\*.mp4`：21 个新增媒体已完成 AV1 720p 转换和元数据写入。
+- `progress.md`：记录本轮单工作室处理、验证证据和回滚点。
+- 回滚方式：代码与文档可回退本轮提交；媒体已在逐文件完整解码校验后替换，目录内未保留 1080p 原片，媒体回滚需从外部备份恢复或重新下载源文件。
