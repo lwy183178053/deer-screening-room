@@ -23,8 +23,18 @@ const videos = Array.from({ length: 8 }, (_, index) => ({
 }))
 const redeemNoticeURL = 'https://www.houfaka.com/liebiao/664EC2A2AD2B11C3A0F8D6B7E9C1234567890'
 const redeemNotice = `鹿币购买地址\n${redeemNoticeURL}`
+const defaultStudios = [{ id: 1, name: '半岛2024', video_count: 4 }, { id: 2, name: '鹿鸣工作室', video_count: 4 }]
+const manyStudios = [
+  ...defaultStudios,
+  ...[
+    '师傅你是做什么工作的', '悠米', '闪闪工作室', '学姐学妹', '鲁R虐恋天使', '白昼映画',
+    '一个名称非常长需要在按钮中安全省略的工作室分类', '青禾', '南风影像档案', '鹿角放映组', '未央', '旧城故事馆',
+    '山海制作社', '拾光', '长镜头实验室', '晚风', '木棉映画工作室', '九月', '银河录像厅', '青空计划',
+    '春日来信', '夜航船', '石榴', '岛屿影像收藏室',
+  ].map((name, index) => ({ id: index + 3, name, video_count: index + 1 })),
+]
 
-async function mockAPI(page: Page, admin = false, redeemCodeTotal = 2) {
+async function mockAPI(page: Page, admin = false, redeemCodeTotal = 2, studioRows = defaultStudios) {
   const videoRequests: string[] = []
   const redeemCodeRequests: string[] = []
   let loginAttempts = 0
@@ -50,7 +60,7 @@ async function mockAPI(page: Page, admin = false, redeemCodeTotal = 2) {
     }
     let body: unknown = {}
     let status = 200
-    if (url.pathname === '/api/v1/studios') body = { studios: [{ id: 1, name: '半岛2024', video_count: 4 }, { id: 2, name: '鹿鸣工作室', video_count: 4 }] }
+    if (url.pathname === '/api/v1/studios') body = { studios: studioRows }
     else if (url.pathname === '/api/v1/auth/captcha') body = { captcha_id: 'captcha-id', image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' }
     else if (url.pathname === '/api/v1/auth/login') { loginAttempts += 1; status = 401; body = { error: { code: 'invalid_credentials', message: '邮箱或密码错误', captcha_required: loginAttempts > 0 } } }
     else if (url.pathname === '/api/v1/videos' || url.pathname === '/api/v1/library') {
@@ -109,6 +119,7 @@ test('desktop random catalog and vertical detail stay within the viewport', asyn
   await expect(page.locator('.video-card')).toHaveCount(8)
   await expect(page.getByRole('button', { name: '工作室', exact: true })).toHaveCount(0)
   await expect(page.locator('.studio-strip')).toBeVisible()
+  await expect(page.getByRole('button', { name: '显示更多' })).toHaveCount(0)
   const firstSeed = new URL(mocked.videoRequests[0], 'http://localhost').searchParams.get('seed')
   await page.getByRole('button', { name: '首页', exact: true }).click()
   await expect.poll(() => mocked.videoRequests.length).toBeGreaterThan(1)
@@ -277,6 +288,70 @@ test('studio filter stays on home and keeps the original catalog order', async (
   expect(latestRequest.searchParams.get('studio_id')).toBe('1')
   expect(latestRequest.searchParams.has('seed')).toBe(false)
 })
+
+test('studio filter packs into two rows and stays expanded while selecting a studio', async ({ page }) => {
+  const mocked = await mockAPI(page, false, 2, manyStudios)
+  await page.setViewportSize({ width: 1024, height: 900 })
+  await page.goto('/')
+
+  const strip = page.locator('.studio-strip')
+  const toggle = page.getByRole('button', { name: '显示更多' })
+  await expect(toggle).toBeVisible()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(strip.locator('button').first()).toContainText('推荐')
+  const collapsed = await strip.boundingBox()
+  const firstButton = await strip.locator('button').first().boundingBox()
+  expect(collapsed).not.toBeNull()
+  expect(firstButton).not.toBeNull()
+  expect(collapsed!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
+
+  await toggle.click()
+  await expect(page.getByRole('button', { name: '收起' })).toHaveAttribute('aria-expanded', 'true')
+  const expandedRows = await strip.locator('button').evaluateAll(buttons => new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size)
+  expect(expandedRows).toBeGreaterThan(2)
+
+  const target = manyStudios.at(-1)!
+  await strip.locator(`[data-studio-id="${target.id}"]`).click()
+  await expect(page.getByRole('heading', { name: target.name })).toBeVisible()
+  await expect(page.getByRole('button', { name: '收起' })).toBeVisible()
+  const latestRequest = new URL(mocked.videoRequests.at(-1)!, 'http://localhost')
+  expect(latestRequest.searchParams.get('studio_id')).toBe(String(target.id))
+
+  await page.getByRole('button', { name: '收起' }).click()
+  await expect(page.getByRole('button', { name: '显示更多' })).toHaveAttribute('aria-expanded', 'false')
+  const collapsedAgain = await strip.boundingBox()
+  expect(collapsedAgain!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
+  await page.screenshot({ path: 'test-results/studio-filter-desktop.png', fullPage: true })
+})
+
+for (const width of [320, 390, 430]) {
+  test(`studio filter adapts without overflow at ${width}px`, async ({ page }) => {
+    await mockAPI(page, false, 2, manyStudios)
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto('/')
+
+    const strip = page.locator('.studio-strip')
+    const toggle = page.getByRole('button', { name: '显示更多' })
+    await expect(toggle).toBeVisible()
+    const toggleBounds = await toggle.boundingBox()
+    const stripBounds = await strip.boundingBox()
+    const firstButton = await strip.locator('button').first().boundingBox()
+    expect(toggleBounds).not.toBeNull()
+    expect(stripBounds).not.toBeNull()
+    expect(firstButton).not.toBeNull()
+    expect(toggleBounds!.height).toBeGreaterThanOrEqual(42)
+    expect(toggleBounds!.width).toBeGreaterThanOrEqual(stripBounds!.width - 1)
+    expect(stripBounds!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
+
+    await toggle.click()
+    const longStudio = strip.locator(`[data-studio-id="${manyStudios[8].id}"]`)
+    await expect(longStudio).toBeVisible()
+    const longBounds = await longStudio.boundingBox()
+    expect(longBounds!.width).toBeLessThanOrEqual(stripBounds!.width + 1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: `test-results/studio-filter-mobile-${width}.png`, fullPage: true })
+  })
+}
 
 test('mobile watch page uses the branded player without overflow', async ({ page }) => {
   await mockAPI(page, true)
