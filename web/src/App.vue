@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CheckCircle2, Coins, Film, Home, KeyRound, Library, LogIn, LogOut, Minus, Play, Plus, RefreshCw, Search, Server, Shield, Ticket, User as UserIcon, Users } from '@lucide/vue'
 import { api, APIError, csrf, setCSRF } from './api'
 import { formatBytes, formatDate } from './format'
+import { splitRedeemNoticeLinks } from './redeemNotice'
 import type { Account, Commerce, NodeInfo, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry } from './types'
 import AppModal from './components/AppModal.vue'
 import BrandLogo from './components/BrandLogo.vue'
@@ -84,6 +85,7 @@ const creditDirection = ref<1 | -1>(1)
 const creditAmount = ref(1)
 const creditReason = ref('')
 const creditBusy = ref(false)
+const redeemNoticeParts = computed(() => splitRedeemNoticeLinks(commerce.value.redeem_notice))
 
 const sectionTitle = computed(() => {
   if (activeView.value === 'library') return '我的已购'
@@ -500,7 +502,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
         <section v-else-if="activeView === 'account'" class="account-view">
           <header class="page-heading"><div><span>我的账户</span><h1 class="account-email">{{ account?.email }}</h1></div><button class="icon-text" type="button" @click="logout"><LogOut :size="17" />退出</button></header>
           <div class="account-summary"><div><span>鹿币余额</span><strong>{{ account?.balance ?? 0 }}</strong></div></div>
-          <div class="account-columns"><section class="plain-section redeem-section"><header><div><span>兑换码</span><h2>充值鹿币</h2></div></header><p v-if="commerce.redeem_notice" class="redeem-notice">{{ commerce.redeem_notice }}</p><form class="redeem-form" @submit.prevent="redeem"><input v-model="redeemCode" required placeholder="DEER-XXXX-XXXX-XXXX-XXXX" /><button class="primary" type="submit"><Ticket :size="18" />兑换</button></form></section></div>
+          <div class="account-columns"><section class="plain-section redeem-section"><header><div><span>兑换码</span><h2>充值鹿币</h2></div></header><p v-if="commerce.redeem_notice" class="redeem-notice"><template v-for="(part, index) in redeemNoticeParts" :key="`${index}-${part.text}`"><a v-if="part.href" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a><span v-else>{{ part.text }}</span></template></p><form class="redeem-form" @submit.prevent="redeem"><input v-model="redeemCode" required placeholder="DEER-XXXX-XXXX-XXXX-XXXX" /><button class="primary" type="submit"><Ticket :size="18" />兑换</button></form></section></div>
           <section class="ledger-section"><header><span>最近记录</span><h2>鹿币明细</h2></header><div class="data-list"><div v-for="entry in walletEntries" :key="entry.id"><span>{{ entry.description }}<small>{{ formatDate(entry.created_at) }}</small></span><strong :class="entry.delta > 0 ? 'positive' : ''">{{ entry.delta > 0 ? '+' : '' }}{{ entry.delta }}</strong></div><p v-if="!walletEntries.length">暂无鹿币记录</p></div></section>
         </section>
 

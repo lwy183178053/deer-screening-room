@@ -146,9 +146,11 @@ function Stop-MediaNode {
     if ($script:ComposeArgs.Count -eq 0 -or -not (Get-Command docker -ErrorAction SilentlyContinue)) {
         throw 'Docker Compose media-node configuration is required for Full/New mode.'
     }
-    $container = (& docker compose @script:ComposeArgs ps -q node 2>$null).Trim()
+    $containerOutput = & docker compose @script:ComposeArgs ps -q node 2>$null
+    $container = if ($null -eq $containerOutput) { '' } else { ($containerOutput -join "`n").Trim() }
     if (-not $container) { return }
-    $running = (& docker inspect -f '{{.State.Running}}' $container 2>$null).Trim()
+    $runningOutput = & docker inspect -f '{{.State.Running}}' $container 2>$null
+    $running = if ($null -eq $runningOutput) { '' } else { ($runningOutput -join "`n").Trim() }
     if ($running -eq 'true') {
         & docker compose @script:ComposeArgs stop node | Out-Host
         if ($LASTEXITCODE -ne 0) { throw 'Could not stop media-node.' }
@@ -166,7 +168,13 @@ function Enter-Maintenance {
     if (-not $MaintenanceLock) { $MaintenanceLock = Join-Path ([IO.Path]::GetFullPath($SourceRoot)) '.deer-media-maintenance.lock' }
     if (Test-Path -LiteralPath $MaintenanceLock) { throw "Maintenance lock already exists: $MaintenanceLock" }
     New-Item -ItemType File -Path $MaintenanceLock -Force | Out-Null
-    Stop-MediaNode
+    try {
+        Stop-MediaNode
+    }
+    catch {
+        [IO.File]::Delete($MaintenanceLock)
+        throw
+    }
     return $MaintenanceLock
 }
 

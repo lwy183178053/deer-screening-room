@@ -1392,3 +1392,40 @@
 - `/opt/deer-screening-room/app.v0.1.4-20260803-1`：104 当前发布目录；`/opt/deer-screening-room/app.mp4-metadata-20260803-1`：唯一保留的 `v0.1.3` 回滚目录。
 - 本机忽略的 `deploy/media-node/.env` 已固定 `v0.1.4`；NAS 保留现有节点身份和配置，由用户在面板将版本改为 `v0.1.4` 后拉取重建。
 - 回滚方式：Windows 将 `DEER_VERSION` 攁回 `v0.1.3` 并仅重建 `node`；104 进入 `app.mp4-metadata-20260803-1/deploy/cloud`，使用该目录的 `.env` 和两份 Compose 文件执行 `up -d --no-build --no-deps gateway`，不使用 `-v`，不操作其他服务。
+
+## 2026-08-04 - Task: 执行新媒体解压后的 AV1/AAC 转码
+### What was done
+- 修复 Windows 转码脚本在 media-node 未运行时对空 Compose 输出调用 `.Trim()` 的问题，并让维护入口在停止失败时清理刚创建的锁。
+- 继续执行 `-Mode New`，处理新解压媒体；已完成编码、完整解码校验、原子替换和元数据整理。
+
+### Testing
+- `半岛2024` 目录共 65 个 MP4，ffprobe 验收 65/65：AV1、最长边不超过 1280、AAC 双声道 48 kHz、约 128 kbps，且 `title`/`deer_media_key` 元数据完整。
+- 维护锁不存在，`.av1.tmp.mp4` 和 `.av1-original.tmp` 临时/备份文件数量均为 0。
+- 转码进程正常退出；本轮未启动原本已停止的 media-node，也未操作其他容器。
+
+### Notes
+- `scripts/transcode-av1-720p.ps1`：处理 Compose 无容器输出并在维护入口失败时清理锁。
+- `docs/local-archive-extraction.md`：补充节点未运行时的转码行为和锁清理说明。
+- `progress.md`：记录本轮转码与验收证据。
+- 回滚方式：回退本轮脚本/文档提交即可；媒体替换已完成且无临时备份，需使用媒体外部备份恢复原片时再单独执行恢复流程。
+
+## 2026-08-04 - Task: 兑换说明链接点击与移动端适配
+### What was done
+- 将兑换说明中的 HTTP/HTTPS 地址安全拆分为可点击链接，新标签页打开并保留普通文字、换行和标点；没有使用 HTML 注入渲染。
+- 为兑换说明及链接增加长单词断行规则，保证 320px、390px 和 430px 手机宽度下不产生横向溢出。
+- 保持兑换说明 API、数据库、兑换逻辑及后台编辑方式不变。
+
+### Testing
+- TDD 红灯确认原实现缺少链接分段模块；新增实现后链接分段测试 3 项通过。
+- 前端 Vitest 4 个文件/9 项通过，生产构建通过。
+- Playwright 13 项通过；桌面验证链接的 `href`、`target` 和 `rel`，320px、390px、430px 验证长链接边界、账户控件和页面无横向溢出。
+- 人工检查三张移动端截图，链接均在兑换说明块内完整换行。
+
+### Notes
+- `web/src/redeemNotice.ts`、`web/src/redeemNotice.test.ts`：增加仅识别 HTTP/HTTPS 的安全文本分段逻辑和边界测试。
+- `web/src/App.vue`：将兑换说明按普通文本和外部链接渲染。
+- `web/src/styles.css`：增加兑换说明长链接断行及链接颜色。
+- `web/e2e/app.spec.ts`：增加桌面链接属性和三种手机宽度布局验收。
+- `docs/credits.md`：记录兑换说明链接的新标签页及移动端断行行为。
+- `progress.md`：追加本轮实现、测试和回滚记录。
+- 回滚方式：回退本轮前端提交并仅重建 Web 服务；不需要操作 Gateway、数据库、WireGuard、节点或媒体文件。

@@ -106,7 +106,8 @@ main { width: min(1380px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 80
 .plain-section h2, .ledger-section h2, .admin-form h2 { margin-top: 4px; font-size: 21px; }
 .redeem-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .redeem-section { max-width: 760px; }
-.redeem-notice { margin: 0 0 14px; border-left: 3px solid var(--coral); padding: 12px 14px; background: var(--coral-soft); color: var(--ink); line-height: 1.7; white-space: pre-wrap; }
+.redeem-notice { min-width: 0; margin: 0 0 14px; border-left: 3px solid var(--coral); padding: 12px 14px; background: var(--coral-soft); color: var(--ink); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.redeem-notice a { color: var(--coral-dark); overflow-wrap: anywhere; word-break: break-word; }
 input, select, textarea { min-width: 0; border: 1px solid var(--line); border-radius: 5px; padding: 0 12px; background: var(--surface); color: var(--ink); }
 input, select { height: 42px; }
 textarea { min-height: 140px; padding-top: 10px; padding-bottom: 10px; resize: vertical; font: inherit; line-height: 1.6; }

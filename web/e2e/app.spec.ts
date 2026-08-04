@@ -21,6 +21,8 @@ const videos = Array.from({ length: 8 }, (_, index) => ({
   can_play: false,
   updated_at: '2026-07-31T00:00:00Z',
 }))
+const redeemNoticeURL = 'https://www.houfaka.com/liebiao/664EC2A2AD2B11C3A0F8D6B7E9C1234567890'
+const redeemNotice = `鹿币购买地址\n${redeemNoticeURL}`
 
 async function mockAPI(page: Page, admin = false) {
   const videoRequests: string[] = []
@@ -68,11 +70,11 @@ async function mockAPI(page: Page, admin = false) {
       const video = videos[Number(url.pathname.split('/').at(-1)) - 1]
       body = { video: admin ? { ...video, can_play: true } : video }
     }
-    else if (url.pathname === '/api/v1/commerce') body = { video_price: 1, redeem_notice: '请先在卡网兑换，再输入卡密兑换鹿币。' }
+    else if (url.pathname === '/api/v1/commerce') body = { video_price: 1, redeem_notice: redeemNotice }
     else if (url.pathname === '/api/v1/auth/me' && admin) body = { account: adminAccount, csrf_token: 'csrf' }
     else if (url.pathname === '/api/v1/auth/me') { status = 401; body = { error: { message: '请先登录' } } }
     else if (url.pathname === '/api/v1/wallet') body = { balance: adminAccount.balance, entries: [] }
-    else if (url.pathname === '/api/v1/admin/redeem-notice') body = { content: '请先在卡网兑换，再输入卡密兑换鹿币。' }
+    else if (url.pathname === '/api/v1/admin/redeem-notice') body = { content: redeemNotice }
     else if (url.pathname === '/api/v1/admin/redeem-codes' && route.request().method() === 'GET') {
       const statusFilter = url.searchParams.get('status') ?? 'all'
       const query = (url.searchParams.get('q') ?? '').toLowerCase()
@@ -230,24 +232,37 @@ test('account page shows redemption and redeem instructions', async ({ page }) =
   await page.goto('/')
   await page.getByRole('button', { name: /128 鹿币/ }).click()
   await expect(page.getByRole('heading', { name: '充值鹿币' })).toBeVisible()
-  await expect(page.getByText('请先在卡网兑换，再输入卡密兑换鹿币。')).toBeVisible()
+  await expect(page.getByText('鹿币购买地址')).toBeVisible()
+  const purchaseLink = page.getByRole('link', { name: redeemNoticeURL })
+  await expect(purchaseLink).toHaveAttribute('href', redeemNoticeURL)
+  await expect(purchaseLink).toHaveAttribute('target', '_blank')
+  await expect(purchaseLink).toHaveAttribute('rel', 'noopener noreferrer')
   await expect(page.getByText('易支付')).toHaveCount(0)
   await expect(page.getByText('支付宝')).toHaveCount(0)
   await page.screenshot({ path: 'test-results/account-desktop.png', fullPage: true })
 })
 
-test('mobile account page keeps email and redeem controls within the viewport', async ({ page }) => {
-  await mockAPI(page, true)
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/')
-  await page.getByRole('button', { name: '我的', exact: true }).click()
-  await expect(page.locator('.account-email')).toBeVisible()
-  await expect(page.getByRole('heading', { name: '充值鹿币' })).toBeVisible()
-  await expect(page.locator('.redeem-form button')).toBeVisible()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  expect(await page.locator('.account-email').evaluate(element => getComputedStyle(element).whiteSpace)).toBe('nowrap')
-  await page.screenshot({ path: 'test-results/account-mobile.png', fullPage: true })
-})
+for (const width of [320, 390, 430]) {
+  test(`mobile account page wraps long purchase links at ${width}px`, async ({ page }) => {
+    await mockAPI(page, true)
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto('/')
+    await page.getByRole('button', { name: '我的', exact: true }).click()
+    await expect(page.locator('.account-email')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '充值鹿币' })).toBeVisible()
+    await expect(page.locator('.redeem-form button')).toBeVisible()
+    const purchaseLink = page.getByRole('link', { name: redeemNoticeURL })
+    await expect(purchaseLink).toBeVisible()
+    await expect(purchaseLink).toHaveCSS('overflow-wrap', 'anywhere')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    const linkBounds = await purchaseLink.boundingBox()
+    expect(linkBounds).not.toBeNull()
+    expect(linkBounds!.x).toBeGreaterThanOrEqual(0)
+    expect(linkBounds!.x + linkBounds!.width).toBeLessThanOrEqual(width)
+    expect(await page.locator('.account-email').evaluate(element => getComputedStyle(element).whiteSpace)).toBe('nowrap')
+    await page.screenshot({ path: `test-results/account-mobile-${width}.png`, fullPage: true })
+  })
+}
 
 test('failed login switches to the self-hosted captcha', async ({ page }) => {
   await mockAPI(page)
