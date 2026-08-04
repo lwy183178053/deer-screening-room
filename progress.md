@@ -1447,3 +1447,23 @@
 - `/opt/deer-screening-room/app.web-links-20260804-1/deploy/cloud/web-before.json`：部署前 Web 容器检查点。
 - `progress.md`：追加生产部署、镜像摘要和验收证据。
 - 回滚方式：在新发布目录执行 `DEER_VERSION=node-counts-20260803-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
+
+## 2026-08-04 - Task: 兑换码分页与管理员移动端适配
+### What was done
+- 将管理员兑换码列表从“加载更多”改为 50 条/页的明确分页，切换页时替换当前列表；状态筛选、搜索和创建后均回到第 1 页。
+- 将兑换码创建表单和兑换说明编辑器在手机端改为紧凑单列，保留兑换码表格局部横向滚动并限制整页宽度。
+- 未修改兑换码 API、数据库、兑换规则或其他管理页面。
+
+### Testing
+- TDD 红灯：分页控件和移动端验收在旧实现下失败；完成实现后定向 Playwright 4 项通过。
+- Vitest 4 个文件/9 项通过；生产构建通过。
+- Playwright 全部 17 项通过：73 条兑换码分页为 50+23，上一页/下一页、筛选和搜索回到第 1 页；单页状态隐藏分页。
+- 320px、390px、430px 管理员兑换码页面验证创建区和说明区上下堆叠、按钮/文本框可见、分页可操作且整页无横向溢出。
+- `git diff --check` 通过。
+
+### Notes
+- `web/src/App.vue`：加入兑换码分页状态、页数计算、翻页和单页替换逻辑。
+- `web/src/styles.css`：增加分页样式、移动端表单收紧和表格溢出边界。
+- `web/e2e/app.spec.ts`：增加分页、筛选/搜索重置和 320/390/430 移动端验收。
+- `progress.md`：记录本轮实现与测试证据。
+- 回滚方式：回退本轮前端提交并仅重建 Web 服务；不操作 Gateway、数据库、WireGuard、Caddy、节点或媒体文件。

@@ -24,15 +24,17 @@ const videos = Array.from({ length: 8 }, (_, index) => ({
 const redeemNoticeURL = 'https://www.houfaka.com/liebiao/664EC2A2AD2B11C3A0F8D6B7E9C1234567890'
 const redeemNotice = `鹿币购买地址\n${redeemNoticeURL}`
 
-async function mockAPI(page: Page, admin = false) {
+async function mockAPI(page: Page, admin = false, redeemCodeTotal = 2) {
   const videoRequests: string[] = []
+  const redeemCodeRequests: string[] = []
   let loginAttempts = 0
   const adminAccount = { id: 1, email: '3180615598@qq.com', is_admin: true, enabled: true, balance: 128, created_at: '2026-07-31T00:00:00Z' }
   const viewer = { id: 2, email: 'viewer@example.com', is_admin: false, enabled: true, balance: 20, created_at: '2026-07-31T00:00:00Z' }
-  const redeemCodeRows = [
-    { id: 1, credits: 10, used: false, created_at: '2026-07-31T00:00:00Z' },
-    { id: 2, credits: 10, used: true, redeemed_by_email: viewer.email, redeemed_at: '2026-07-31T01:00:00Z', created_at: '2026-07-31T00:00:00Z' },
-  ]
+  const redeemCodeRows = Array.from({ length: redeemCodeTotal }, (_, index) => {
+    const id = index + 1
+    const used = id === 2 || (redeemCodeTotal > 2 && id <= 6)
+    return { id, credits: 1, used, redeemed_by_email: used ? viewer.email : undefined, redeemed_at: used ? '2026-07-31T01:00:00Z' : undefined, created_at: '2026-07-31T00:00:00Z' }
+  }).reverse()
   await page.route('**/api/v1/**', async route => {
     const url = new URL(route.request().url())
     const pageNumber = Number(url.searchParams.get('page') ?? 1)
@@ -76,11 +78,16 @@ async function mockAPI(page: Page, admin = false) {
     else if (url.pathname === '/api/v1/wallet') body = { balance: adminAccount.balance, entries: [] }
     else if (url.pathname === '/api/v1/admin/redeem-notice') body = { content: redeemNotice }
     else if (url.pathname === '/api/v1/admin/redeem-codes' && route.request().method() === 'GET') {
+      redeemCodeRequests.push(`${url.pathname}${url.search}`)
       const statusFilter = url.searchParams.get('status') ?? 'all'
       const query = (url.searchParams.get('q') ?? '').toLowerCase()
       let codes = redeemCodeRows.filter(code => statusFilter === 'all' || (statusFilter === 'used') === code.used)
       if (query) codes = codes.filter(code => code.redeemed_by_email?.toLowerCase().includes(query))
-      body = { codes, page: 1, page_size: 20, total: codes.length, counts: { all: 2, unused: 1, used: 1 } }
+      const total = codes.length
+      const redeemPage = Number(url.searchParams.get('page') ?? 1)
+      const redeemPageSize = 50
+      codes = codes.slice((redeemPage - 1) * redeemPageSize, redeemPage * redeemPageSize)
+      body = { codes, page: redeemPage, page_size: redeemPageSize, total, counts: { all: redeemCodeRows.length, unused: redeemCodeRows.filter(code => !code.used).length, used: redeemCodeRows.filter(code => code.used).length } }
     }
     else if (url.pathname === '/api/v1/admin/nodes' && route.request().method() === 'GET') body = { nodes: [{ id: 1, name: 'fnos-media', online: true, total_bytes: 1_000_000, available_bytes: 500_000, last_seen_at: '2026-07-31T00:00:00Z', scan_status: 'ok', last_scan_at: '2026-07-31T00:00:00Z' }] }
     else if (url.pathname === '/api/v1/admin/users' && route.request().method() === 'GET') body = { users: url.searchParams.get('q') ? [viewer] : [adminAccount, viewer], page: 1, page_size: 20, total: url.searchParams.get('q') ? 1 : 2, all_total: 2 }
@@ -91,7 +98,7 @@ async function mockAPI(page: Page, admin = false) {
     }
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
   })
-  return { videoRequests }
+  return { videoRequests, redeemCodeRequests }
 }
 
 test('desktop random catalog and vertical detail stay within the viewport', async ({ page }) => {
@@ -196,9 +203,62 @@ test('administrator defaults to users and manages individual redeem codes', asyn
   await expect(page.getByRole('button', { name: '设置', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '视频', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '订单', exact: true })).toHaveCount(0)
+  await expect(page.locator('.redeem-pagination')).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: 'test-results/admin-desktop.png', fullPage: true })
 })
+
+test('redeem codes use explicit pages and reset to page one for filters and search', async ({ page }) => {
+  const mocked = await mockAPI(page, true, 73)
+  await page.goto('/')
+  await page.getByRole('button', { name: /管理/ }).first().click()
+  await page.getByRole('button', { name: '兑换码', exact: true }).click()
+  await expect(page.locator('.redeem-code-row:not(.head)')).toHaveCount(50)
+  await expect(page.locator('.redeem-pagination')).toContainText('第 1 / 2 页')
+  await expect(page.getByRole('button', { name: '上一页' })).toBeDisabled()
+  await page.getByRole('button', { name: '下一页' }).click()
+  await expect(page.locator('.redeem-code-row:not(.head)')).toHaveCount(23)
+  await expect(page.locator('.redeem-pagination')).toContainText('第 2 / 2 页')
+  await expect(page.getByRole('button', { name: '下一页' })).toBeDisabled()
+  await page.getByRole('button', { name: '已使用 6', exact: true }).click()
+  await expect(page.locator('.redeem-code-row:not(.head)')).toHaveCount(6)
+  await expect(page.locator('.redeem-pagination')).toHaveCount(0)
+  expect(mocked.redeemCodeRequests.at(-1)).not.toContain('page=2')
+  await page.getByRole('button', { name: '全部 73', exact: true }).click()
+  await page.getByRole('button', { name: '下一页' }).click()
+  await page.getByLabel('搜索完整卡密或使用者邮箱').fill('viewer@example.com')
+  await page.getByRole('button', { name: '搜索', exact: true }).last().click()
+  await expect(page.locator('.redeem-code-row:not(.head)')).toHaveCount(6)
+  await expect(page.locator('.redeem-pagination')).toHaveCount(0)
+  expect(mocked.redeemCodeRequests.at(-1)).not.toContain('page=2')
+})
+
+for (const width of [320, 390, 430]) {
+  test(`mobile redeem admin uses compact stacked tools at ${width}px`, async ({ page }) => {
+    await mockAPI(page, true, 73)
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto('/')
+    await page.getByRole('button', { name: '管理', exact: true }).last().click()
+    await page.getByRole('button', { name: '兑换码', exact: true }).click()
+    const tools = page.locator('.redeem-admin-tools')
+    const createForm = tools.locator('form').first()
+    const noticeForm = tools.locator('form').last()
+    await expect(createForm.getByRole('button', { name: '生成并导出 TXT' })).toBeVisible()
+    await expect(noticeForm.getByRole('button', { name: '保存说明' })).toBeVisible()
+    await expect(noticeForm.locator('textarea')).toBeVisible()
+    const createBounds = await createForm.boundingBox()
+    const noticeBounds = await noticeForm.boundingBox()
+    expect(createBounds).not.toBeNull()
+    expect(noticeBounds).not.toBeNull()
+    expect(noticeBounds!.y).toBeGreaterThan(createBounds!.y + createBounds!.height - 1)
+    expect(Math.abs(noticeBounds!.x - createBounds!.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(noticeBounds!.width - createBounds!.width)).toBeLessThanOrEqual(1)
+    await expect(page.locator('.redeem-pagination')).toBeVisible()
+    await expect(page.getByRole('button', { name: '下一页' })).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await page.screenshot({ path: `test-results/admin-redeem-mobile-${width}.png`, fullPage: true })
+  })
+}
 
 test('direct watch link restores playback after authentication state loads', async ({ page }) => {
   await mockAPI(page, true)
