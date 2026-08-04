@@ -1467,3 +1467,22 @@
 - `web/e2e/app.spec.ts`：增加分页、筛选/搜索重置和 320/390/430 移动端验收。
 - `progress.md`：记录本轮实现与测试证据。
 - 回滚方式：回退本轮前端提交并仅重建 Web 服务；不操作 Gateway、数据库、WireGuard、Caddy、节点或媒体文件。
+
+## 2026-08-04 - Task: 部署兑换码分页与管理员移动端适配
+### What was done
+- 在 104 创建独立发布目录 `app.redeem-pagination-20260804-1`，并将部署前 Web 镜像固定为 `deerroom-web:redeem-links-20260804-1`。
+- 只构建并重建 `deer-screening-room-cloud-web-1`，上线兑换码分页和管理员移动端紧凑布局。
+- Gateway、PostgreSQL、WireGuard、WireGuard provisioner、Caddy、媒体节点和其他业务容器未重启或修改。
+
+### Testing
+- 104 Web Compose 配置校验和 `build web` 通过，新 Web 镜像摘要为 `sha256:402596e5762410df8dffe8dbc90e8052662deccbe269c59566ac3a5fb34bafd4`。
+- 回环首页、回环 `/api/v1/health` 和 `https://xiaolu.lwylink.xyz/` 均返回 `200`，线上静态资源为 `assets/index-DhrR5OqJ.js`。
+- 真实管理员页面当前共 74 条兑换码：第一页 50 条、第二页 24 条；第 2 页 API 和最终 DOM 行数一致。
+- 320px、390px、430px 真实域名验收均通过：创建区与说明区上下堆叠、分页可见可操作、整页无横向溢出。
+- Web 重建后重启次数为 0；Gateway、PostgreSQL、WireGuard、provisioner 的启动时间和重启次数未变化；宿主 Caddyfile SHA-256 仍为 `4d598e995f68224c2a717e03c853cbab544249904cbdb73b912efc6229e921a6`。
+
+### Notes
+- `/opt/deer-screening-room/app.redeem-pagination-20260804-1`：104 本轮 Web 发布目录。
+- `/opt/deer-screening-room/app.redeem-pagination-20260804-1/deploy/cloud/web-before.json`：部署前 Web 容器检查点。
+- `progress.md`：追加生产部署、分页实测和服务隔离证据。
+- 回滚方式：在本轮发布目录执行 `DEER_VERSION=redeem-links-20260804-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
