@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $TargetLongEdge = 1280
 $TargetAudioBitrate = 128000
-$MinimumMeasuredAudioBitrate = 96000
+$MinimumMeasuredAudioBitrate = 80000
 $MaximumMeasuredAudioBitrate = 136000
 $VideoExtensions = @('.mp4')
 $script:MediaNodeWasRunning = $false

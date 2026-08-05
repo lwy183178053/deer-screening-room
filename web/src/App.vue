@@ -182,7 +182,10 @@ function updateStudioLayout() {
   )
   if (nextOrder.some((id, index) => studioOrder.value[index] !== id) || nextOrder.length !== studioOrder.value.length) {
     studioOrder.value = nextOrder
-    void nextTick(scheduleStudioLayout)
+    void nextTick(() => {
+      updateStudioOverflow()
+      scheduleStudioLayout()
+    })
     return
   }
   updateStudioOverflow()
@@ -570,7 +573,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
         <div v-if="message || error" class="notice-wrap"><button v-if="message" class="notice success" type="button" @click="message = ''"><CheckCircle2 :size="17" />{{ message }}</button><button v-if="error" class="notice error" type="button" @click="error = ''"><AlertCircle :size="17" />{{ error }}</button></div>
         <template v-if="activeView !== 'admin' && activeView !== 'account'">
           <section class="catalog-heading"><div><span>{{ catalogTotal }} 部作品</span><h1>{{ sectionTitle }}</h1></div></section>
-          <div v-if="activeView === 'home' && !search.trim()" class="studio-filter"><div id="studio-list" ref="studioStrip" class="studio-strip" :class="{ expanded: studioExpanded }"><button data-studio-recommendation :class="{ active: selectedStudio === 0 }" @click="chooseStudio(0)">推荐</button><button v-for="studio in orderedStudios" :key="studio.id" :data-studio-id="studio.id" :class="{ active: selectedStudio === studio.id }" @click="chooseStudio(studio.id)"><span class="studio-name">{{ studio.name }}</span><span class="studio-count">{{ studio.video_count }}</span></button></div><button v-if="studioOverflowing" class="secondary studio-toggle" type="button" aria-controls="studio-list" :aria-expanded="studioExpanded" @click="studioExpanded = !studioExpanded"><component :is="studioExpanded ? ArrowUp : ArrowDown" :size="16" />{{ studioExpanded ? '收起' : '显示更多' }}</button></div>
+          <div v-if="activeView === 'home' && !search.trim()" class="studio-filter" :class="{ 'has-toggle': studioOverflowing && !studioExpanded, expanded: studioExpanded }"><div id="studio-list" ref="studioStrip" class="studio-strip" :class="{ expanded: studioExpanded }"><button data-studio-recommendation :class="{ active: selectedStudio === 0 }" @click="chooseStudio(0)">推荐</button><button v-for="studio in orderedStudios" :key="studio.id" :data-studio-id="studio.id" :class="{ active: selectedStudio === studio.id }" @click="chooseStudio(studio.id)"><span class="studio-name">{{ studio.name }}</span><span class="studio-count">{{ studio.video_count }}</span></button><button v-if="studioOverflowing && studioExpanded" class="studio-toggle" type="button" aria-controls="studio-list" :aria-expanded="studioExpanded" @click="studioExpanded = false"><ArrowUp :size="16" />收起</button></div><button v-if="studioOverflowing && !studioExpanded" class="studio-toggle" type="button" aria-controls="studio-list" :aria-expanded="studioExpanded" @click="studioExpanded = true"><ArrowDown :size="16" />更多</button></div>
           <section v-if="loading" class="empty-state"><RefreshCw class="spin" :size="24" />正在整理放映单</section><section v-else-if="videos.length" class="video-grid"><VideoCard v-for="(video, index) in videos" :key="video.id" :video="video" :index="index" @open="openVideo" /></section><section v-else class="empty-state"><Film :size="30" /><strong>这里还没有作品</strong><span>媒体节点同步后会自动出现。</span></section>
           <nav v-if="catalogPageCount > 1" class="catalog-pagination" aria-label="视频分页"><button class="icon-button" type="button" :disabled="catalogPage === 1" aria-label="上一页" title="上一页" @click="goToCatalogPage(catalogPage - 1)"><ArrowLeft :size="17" /></button><span>第 {{ catalogPage }} / {{ catalogPageCount }} 页</span><button class="icon-button" type="button" :disabled="catalogPage === catalogPageCount" aria-label="下一页" title="下一页" @click="goToCatalogPage(catalogPage + 1)"><ArrowRight :size="17" /></button></nav>
         </template>

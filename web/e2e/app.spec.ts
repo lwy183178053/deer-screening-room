@@ -33,6 +33,14 @@ const manyStudios = [
     '春日来信', '夜航船', '石榴', '岛屿影像收藏室',
   ].map((name, index) => ({ id: index + 3, name, video_count: index + 1 })),
 ]
+const liveLikeStudios = [
+  { id: 93, name: '丝米', video_count: 13 },
+  { id: 90, name: '半岛2024', video_count: 148 },
+  { id: 323, name: '学姐学妹', video_count: 21 },
+  { id: 94, name: '师傅你是做什么工作的', video_count: 2 },
+  { id: 92, name: '悠米', video_count: 39 },
+  { id: 95, name: '闪闪工作室', video_count: 1 },
+]
 
 async function mockAPI(page: Page, admin = false, redeemCodeTotal = 2, studioRows = defaultStudios) {
   const videoRequests: string[] = []
@@ -119,7 +127,7 @@ test('desktop random catalog and vertical detail stay within the viewport', asyn
   await expect(page.locator('.video-card')).toHaveCount(8)
   await expect(page.getByRole('button', { name: '工作室', exact: true })).toHaveCount(0)
   await expect(page.locator('.studio-strip')).toBeVisible()
-  await expect(page.getByRole('button', { name: '显示更多' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '更多' })).toHaveCount(0)
   const firstSeed = new URL(mocked.videoRequests[0], 'http://localhost').searchParams.get('seed')
   await page.getByRole('button', { name: '首页', exact: true }).click()
   await expect.poll(() => mocked.videoRequests.length).toBeGreaterThan(1)
@@ -295,7 +303,7 @@ test('studio filter packs into two rows and stays expanded while selecting a stu
   await page.goto('/')
 
   const strip = page.locator('.studio-strip')
-  const toggle = page.getByRole('button', { name: '显示更多' })
+  const toggle = page.getByRole('button', { name: '更多' })
   await expect(toggle).toBeVisible()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(strip.locator('button').first()).toContainText('推荐')
@@ -318,10 +326,17 @@ test('studio filter packs into two rows and stays expanded while selecting a stu
   expect(latestRequest.searchParams.get('studio_id')).toBe(String(target.id))
 
   await page.getByRole('button', { name: '收起' }).click()
-  await expect(page.getByRole('button', { name: '显示更多' })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('button', { name: '更多' })).toHaveAttribute('aria-expanded', 'false')
   const collapsedAgain = await strip.boundingBox()
   expect(collapsedAgain!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
   await page.screenshot({ path: 'test-results/studio-filter-desktop.png', fullPage: true })
+})
+
+test('studio filter reveals overflow after a compact live-sized studio response settles', async ({ page }) => {
+  await mockAPI(page, false, 2, liveLikeStudios)
+  await page.setViewportSize({ width: 320, height: 844 })
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: '更多' })).toBeVisible()
 })
 
 for (const width of [320, 390, 430]) {
@@ -331,7 +346,7 @@ for (const width of [320, 390, 430]) {
     await page.goto('/')
 
     const strip = page.locator('.studio-strip')
-    const toggle = page.getByRole('button', { name: '显示更多' })
+    const toggle = page.getByRole('button', { name: '更多' })
     await expect(toggle).toBeVisible()
     const toggleBounds = await toggle.boundingBox()
     const stripBounds = await strip.boundingBox()
@@ -339,15 +354,16 @@ for (const width of [320, 390, 430]) {
     expect(toggleBounds).not.toBeNull()
     expect(stripBounds).not.toBeNull()
     expect(firstButton).not.toBeNull()
-    expect(toggleBounds!.height).toBeGreaterThanOrEqual(42)
-    expect(toggleBounds!.width).toBeGreaterThanOrEqual(stripBounds!.width - 1)
+    expect(toggleBounds!.height).toBe(firstButton!.height)
+    expect(toggleBounds!.width).toBeLessThan(stripBounds!.width)
     expect(stripBounds!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
 
     await toggle.click()
     const longStudio = strip.locator(`[data-studio-id="${manyStudios[8].id}"]`)
     await expect(longStudio).toBeVisible()
     const longBounds = await longStudio.boundingBox()
-    expect(longBounds!.width).toBeLessThanOrEqual(stripBounds!.width + 1)
+    const expandedStripBounds = await strip.boundingBox()
+    expect(longBounds!.width).toBeLessThanOrEqual(expandedStripBounds!.width + 1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await page.screenshot({ path: `test-results/studio-filter-mobile-${width}.png`, fullPage: true })
   })
