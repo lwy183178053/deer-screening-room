@@ -1627,3 +1627,20 @@
 - `/opt/deer-screening-room/app.studio-picker-20260805-1/deploy/cloud/deploy-backup/containers-before.txt`、`containers-after.txt`：部署前后容器状态对比。
 - `progress.md`：追加生产部署、镜像摘要、健康检查和隔离证据。
 - 回滚方式：进入本轮发布目录，使用旧镜像执行 `DEER_VERSION=studio-filter-20260805-2 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
+
+## 2026-08-05 - Task: 隐藏推荐工作室数量
+### What was done
+- 工作室弹窗中的“推荐”标签不再显示数字；其他工作室继续显示视频数量。
+- 保持标题、筛选请求、弹窗布局和移动端行为不变。
+
+### Testing
+- `npm.cmd test`：5 个测试文件、13 项通过。
+- `npm.cmd run build`：Vue 类型检查和生产构建通过。
+- Playwright 工作室弹窗定向 5 项通过，包含推荐无数字、选择关闭和 320px、390px、430px 无横向溢出。
+- `git diff --check` 通过。
+
+### Notes
+- `web/src/App.vue`：仅对推荐标签隐藏数量节点。
+- `web/e2e/app.spec.ts`：增加推荐标签无数字断言。
+- `progress.md`：记录本轮修复和验证。
+- 回滚方式：回退本轮提交并仅恢复旧 Web 镜像；不操作 Gateway、数据库、WireGuard、Caddy、节点或媒体文件。

@@ -300,6 +300,7 @@ test('studio picker globally packs rows and closes after selecting a studio', as
   const rowCount = await rows.count()
   expect(rowCount).toBeGreaterThan(1)
   await expect(rows.first().locator('.studio-picker-tag').first()).toContainText('推荐')
+  await expect(rows.locator('[data-studio-id="0"]').last()).toHaveText(/^推荐$/)
 
   const target = manyStudios.at(-1)!
   await rows.locator(`[data-studio-id="${target.id}"]`).click()
