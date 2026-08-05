@@ -1564,3 +1564,20 @@
 - `docs/media-library.md`：记录“更多/收起”同行分类行为。
 - `progress.md`：记录本轮 UI 细化、验证和部署回滚点。
 - 回滚方式：回退本轮前端提交并只重建 Web 服务；不操作 Gateway、数据库、WireGuard、Caddy、节点或媒体文件。
+
+## 2026-08-05 - Task: 部署工作室分类“更多”按钮与手机标签收紧
+### What was done
+- 在 104 创建独立发布目录 `/opt/deer-screening-room/app.studio-filter-20260805-2`，固定部署前 Web 镜像并只重建 `deer-screening-room-cloud-web-1`。
+- 上线“更多”同行按钮、手机 36px 分类标签和异步溢出检测；没有重启或修改 Gateway、PostgreSQL、WireGuard、provisioner、Caddy、节点及其他业务容器。
+
+### Testing
+- Web Compose 配置校验和镜像构建通过；新镜像摘要为 `sha256:47603661a044fa2a5b6ffdb236f13efa41709ab4b2ce028250148eca2e60ef73`。
+- 回环首页、回环 `/api/v1/health` 和 `https://xiaolu.lwylink.xyz/` 均返回 `200`；真实静态资源为 `assets/index-DjCgi5Nb.js` 与 `assets/index-DLkBI62-.css`。
+- 真实域名浏览器验证：1440px 下 6 个工作室一行且不显示控制按钮；320/390/430px 下“更多”与第二行同行，展开后“收起”可见，三种宽度均无横向溢出。
+- Web 新容器重启次数为 0；Gateway、PostgreSQL、WireGuard、provisioner 的启动时间、镜像和重启次数与部署前一致；宿主 Caddyfile SHA-256 仍为 `4d598e995f68224c2a717e03c853cbab544249904cbdb73b912efc6229e921a6`。
+
+### Notes
+- `/opt/deer-screening-room/app.studio-filter-20260805-2`：本轮 Web 发布目录。
+- `/opt/deer-screening-room/app.studio-filter-20260805-2/deploy/cloud/web-before.json`：部署前 Web 容器检查点。
+- `progress.md`：记录生产镜像、真实域名布局和服务隔离证据。
+- 回滚方式：在本轮发布目录使用 `DEER_VERSION=studio-filter-before-20260805-2 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
