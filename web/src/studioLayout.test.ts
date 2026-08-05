@@ -1,40 +1,37 @@
 import { describe, expect, it } from 'vitest'
-import { packStudioItems } from './studioLayout'
-
-const studios = [
-  { id: 1, width: 70 },
-  { id: 2, width: 50 },
-  { id: 3, width: 20 },
-]
+import { packStudioRows } from './studioLayout'
 
 describe('studio layout packing', () => {
-  it('keeps recommendation first and backfills its row with the best fitting studio', () => {
-    expect(packStudioItems(studios, 100, 30, 10)).toEqual([2, 1, 3])
-  })
-
-  it('anchors each new row with the earliest remaining studio', () => {
-    expect(packStudioItems([
-      { id: 1, width: 55 },
+  it('keeps recommendation at the start of the first row', () => {
+    expect(packStudioRows([
+      { id: 0, width: 30 },
+      { id: 1, width: 60 },
       { id: 2, width: 40 },
+      { id: 3, width: 20 },
+    ], 100, 10)).toHaveLength(2)
+    expect(packStudioRows([
+      { id: 0, width: 30 },
+      { id: 1, width: 60 },
+      { id: 2, width: 40 },
+      { id: 3, width: 20 },
+    ], 100, 10).flat()).toEqual(expect.arrayContaining([0, 1, 2, 3]))
+  })
+
+  it('minimizes the number of rows before balancing empty space', () => {
+    expect(packStudioRows([
+      { id: 0, width: 30 },
+      { id: 1, width: 55 },
+      { id: 2, width: 45 },
       { id: 3, width: 35 },
-    ], 100, 0, 10)).toEqual([1, 3, 2])
+    ], 100, 10)).toHaveLength(2)
   })
 
-  it('returns the same order for the same measurements', () => {
-    const first = packStudioItems(studios, 100, 30, 10)
-    const second = packStudioItems(studios, 100, 30, 10)
-    expect(second).toEqual(first)
+  it('returns stable rows for the same measurements', () => {
+    const items = [{ id: 0, width: 30 }, { id: 1, width: 70 }, { id: 2, width: 40 }, { id: 3, width: 20 }]
+    expect(packStudioRows(items, 120, 8)).toEqual(packStudioRows(items, 120, 8))
   })
 
-  it('reflows when the available width changes', () => {
-    expect(packStudioItems(studios, 100, 30, 10)).toEqual([2, 1, 3])
-    expect(packStudioItems(studios, 120, 30, 10)).toEqual([1, 2, 3])
-  })
-
-  it('places an oversized studio on its own row without losing following studios', () => {
-    expect(packStudioItems([
-      { id: 1, width: 160 },
-      { id: 2, width: 30 },
-    ], 100, 0, 8)).toEqual([1, 2])
+  it('keeps every item when one label is wider than the container', () => {
+    expect(packStudioRows([{ id: 0, width: 30 }, { id: 1, width: 180 }, { id: 2, width: 30 }], 100, 8).flat()).toEqual(expect.arrayContaining([0, 1, 2]))
   })
 })

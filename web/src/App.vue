@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CheckCircle2, Coins, Film, Home, KeyRound, Library, LogIn, LogOut, Minus, Play, Plus, RefreshCw, Search, Server, Shield, Ticket, User as UserIcon, Users } from '@lucide/vue'
+import { AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, CheckCircle2, ChevronDown, Coins, Film, Home, KeyRound, Library, LogIn, LogOut, Minus, Play, Plus, RefreshCw, Search, Server, Shield, Ticket, User as UserIcon, Users } from '@lucide/vue'
 import { api, APIError, csrf, setCSRF } from './api'
 import { formatBytes, formatDate } from './format'
 import { splitRedeemNoticeLinks } from './redeemNotice'
-import { packStudioItems } from './studioLayout'
+import { packStudioRows } from './studioLayout'
 import type { Account, Commerce, NodeInfo, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry } from './types'
 import AppModal from './components/AppModal.vue'
 import BrandLogo from './components/BrandLogo.vue'
@@ -27,10 +27,10 @@ const catalogTotal = ref(0)
 const catalogSeed = ref(createCatalogSeed())
 const message = ref('')
 const error = ref('')
-const studioStrip = ref<HTMLElement | null>(null)
-const studioOrder = ref<number[]>([])
-const studioExpanded = ref(false)
-const studioOverflowing = ref(false)
+const studioPickerOpen = ref(false)
+const studioPickerTags = ref<HTMLElement | null>(null)
+const studioPickerMeasure = ref<HTMLElement | null>(null)
+const studioRows = ref<number[][]>([])
 
 const selectedVideo = ref<Video | null>(null)
 const playerBusy = ref(false)
@@ -43,8 +43,9 @@ const pendingWatchID = ref<number | null>(null)
 let watchPushed = false
 let scanPollTimer: number | undefined
 let noticeTimer: number | undefined
-let studioLayoutTimer: number | undefined
-let studioResizeObserver: ResizeObserver | undefined
+let studioPickerResizeObserver: ResizeObserver | undefined
+let studioPickerMeasureFrame: number | undefined
+let studioPickerWidth = 0
 
 const authOpen = ref(false)
 const authMode = ref<'login' | 'register'>('login')
@@ -94,11 +95,11 @@ const creditReason = ref('')
 const creditBusy = ref(false)
 const redeemNoticeParts = computed(() => splitRedeemNoticeLinks(commerce.value.redeem_notice))
 const redeemPageCount = computed(() => Math.max(1, Math.ceil(redeemTotal.value / 50)))
-const orderedStudios = computed(() => {
-  const byID = new Map(studios.value.map(studio => [studio.id, studio]))
-  const ordered = studioOrder.value.flatMap(id => byID.get(id) ?? [])
-  const included = new Set(ordered.map(studio => studio.id))
-  return [...ordered, ...studios.value.filter(studio => !included.has(studio.id))]
+const pickerStudios = computed<Studio[]>(() => [{ id: 0, name: '推荐', video_count: catalogTotal.value }, ...studios.value])
+const studioByID = computed(() => new Map(pickerStudios.value.map(studio => [studio.id, studio])))
+const studioPickerRows = computed(() => {
+  const rows = studioRows.value.map(row => row.map(id => studioByID.value.get(id)).filter((studio): studio is Studio => Boolean(studio)))
+  return rows.length ? rows : [pickerStudios.value]
 })
 
 const sectionTitle = computed(() => {
@@ -126,77 +127,60 @@ watch([message, error], () => {
   }, 4000)
 })
 
-watch(studios, () => {
-  studioOrder.value = []
-  void nextTick(scheduleStudioLayout)
-})
-watch(studioStrip, (element, previous) => {
-  if (previous) studioResizeObserver?.unobserve(previous)
-  if (element) {
-    studioResizeObserver?.observe(element)
-    scheduleStudioLayout()
+watch(studios, () => { studioPickerWidth = 0; if (studioPickerOpen.value) void nextTick(measureStudioPicker) })
+watch(studioPickerOpen, open => {
+  if (open) {
+    void nextTick(() => {
+      measureStudioPicker()
+      if (typeof ResizeObserver !== 'undefined' && studioPickerTags.value) {
+        studioPickerResizeObserver?.disconnect()
+        studioPickerResizeObserver = new ResizeObserver(() => {
+          if (studioPickerMeasureFrame !== undefined) return
+          studioPickerMeasureFrame = window.requestAnimationFrame(() => {
+            studioPickerMeasureFrame = undefined
+            measureStudioPicker()
+          })
+        })
+        studioPickerResizeObserver.observe(studioPickerTags.value)
+      }
+    })
+  } else {
+    studioPickerResizeObserver?.disconnect()
+    if (studioPickerMeasureFrame !== undefined) window.cancelAnimationFrame(studioPickerMeasureFrame)
+    studioPickerMeasureFrame = undefined
+    studioPickerWidth = 0
   }
 })
-watch(studioExpanded, () => void nextTick(updateStudioOverflow))
 
 onMounted(async () => {
   window.addEventListener('popstate', syncLocation)
-  if (typeof ResizeObserver !== 'undefined') studioResizeObserver = new ResizeObserver(scheduleStudioLayout)
   await Promise.all([loadPublic(), loadMe()])
   loading.value = false
   await syncLocation()
-  await nextTick()
-  if (studioStrip.value) studioResizeObserver?.observe(studioStrip.value)
-  void document.fonts?.ready.then(scheduleStudioLayout)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('popstate', syncLocation)
   stopWatch()
   if (scanPollTimer !== undefined) window.clearTimeout(scanPollTimer)
   if (noticeTimer !== undefined) window.clearTimeout(noticeTimer)
-  if (studioLayoutTimer !== undefined) window.clearTimeout(studioLayoutTimer)
-  studioResizeObserver?.disconnect()
+  studioPickerResizeObserver?.disconnect()
+  if (studioPickerMeasureFrame !== undefined) window.cancelAnimationFrame(studioPickerMeasureFrame)
 })
 
-function scheduleStudioLayout() {
-  if (studioLayoutTimer !== undefined) return
-  studioLayoutTimer = window.setTimeout(() => {
-    studioLayoutTimer = undefined
-    updateStudioLayout()
-  })
+function openStudioPicker() {
+  studioPickerOpen.value = true
 }
 
-function updateStudioLayout() {
-  const strip = studioStrip.value
-  if (!strip || strip.clientWidth <= 0) return
-  const recommendation = strip.querySelector<HTMLElement>('[data-studio-recommendation]')
-  const buttons = Array.from(strip.querySelectorAll<HTMLElement>('[data-studio-id]'))
-  if (!recommendation || buttons.length !== studios.value.length) return
-  const widths = new Map(buttons.map(button => [Number(button.dataset.studioId), button.getBoundingClientRect().width]))
-  const gap = Number.parseFloat(getComputedStyle(strip).columnGap) || 0
-  const nextOrder = packStudioItems(
-    studios.value.map(studio => ({ id: studio.id, width: widths.get(studio.id) ?? 0 })),
-    strip.clientWidth,
-    recommendation.getBoundingClientRect().width,
-    gap,
-  )
-  if (nextOrder.some((id, index) => studioOrder.value[index] !== id) || nextOrder.length !== studioOrder.value.length) {
-    studioOrder.value = nextOrder
-    void nextTick(() => {
-      updateStudioOverflow()
-      scheduleStudioLayout()
-    })
-    return
-  }
-  updateStudioOverflow()
-}
-
-function updateStudioOverflow() {
-  const strip = studioStrip.value
-  if (!strip) return
-  const rows = new Set(Array.from(strip.querySelectorAll<HTMLElement>('button')).map(button => Math.round(button.offsetTop)))
-  studioOverflowing.value = rows.size > 2
-  if (!studioOverflowing.value) studioExpanded.value = false
+function measureStudioPicker() {
+  const container = studioPickerTags.value
+  const measure = studioPickerMeasure.value
+  if (!container || !measure) return
+  const containerWidth = container.clientWidth || 680
+  if (containerWidth === studioPickerWidth && studioRows.value.length) return
+  studioPickerWidth = containerWidth
+  const widths = new Map(Array.from(measure.querySelectorAll<HTMLElement>('[data-studio-id]')).map(button => [Number(button.dataset.studioId), button.getBoundingClientRect().width]))
+  const gap = Number.parseFloat(getComputedStyle(measure).columnGap) || 10
+  studioRows.value = packStudioRows(pickerStudios.value.map((studio, order) => ({ id: studio.id, width: widths.get(studio.id) ?? 0, order })), containerWidth, gap)
 }
 
 async function loadPublic() {
@@ -259,7 +243,7 @@ async function openView(view: View) {
   if (view === 'admin') await openAdmin('users')
 }
 
-async function chooseStudio(id: number) { selectedStudio.value = id; search.value = ''; activeView.value = 'home'; if (!id) catalogSeed.value = createCatalogSeed(); await refreshCatalog() }
+async function chooseStudio(id: number) { selectedStudio.value = id; studioPickerOpen.value = false; search.value = ''; activeView.value = 'home'; if (!id) catalogSeed.value = createCatalogSeed(); await refreshCatalog() }
 async function submitSearch() { selectedStudio.value = 0; activeView.value = 'home'; await refreshCatalog() }
 
 function openAuth(mode: 'login' | 'register') {
@@ -572,8 +556,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
       <main>
         <div v-if="message || error" class="notice-wrap"><button v-if="message" class="notice success" type="button" @click="message = ''"><CheckCircle2 :size="17" />{{ message }}</button><button v-if="error" class="notice error" type="button" @click="error = ''"><AlertCircle :size="17" />{{ error }}</button></div>
         <template v-if="activeView !== 'admin' && activeView !== 'account'">
-          <section class="catalog-heading"><div><span>{{ catalogTotal }} 部作品</span><h1>{{ sectionTitle }}</h1></div></section>
-          <div v-if="activeView === 'home' && !search.trim()" class="studio-filter" :class="{ 'has-toggle': studioOverflowing && !studioExpanded, expanded: studioExpanded }"><div id="studio-list" ref="studioStrip" class="studio-strip" :class="{ expanded: studioExpanded }"><button data-studio-recommendation :class="{ active: selectedStudio === 0 }" @click="chooseStudio(0)">推荐</button><button v-for="studio in orderedStudios" :key="studio.id" :data-studio-id="studio.id" :class="{ active: selectedStudio === studio.id }" @click="chooseStudio(studio.id)"><span class="studio-name">{{ studio.name }}</span><span class="studio-count">{{ studio.video_count }}</span></button><button v-if="studioOverflowing && studioExpanded" class="studio-toggle" type="button" aria-controls="studio-list" :aria-expanded="studioExpanded" @click="studioExpanded = false"><ArrowUp :size="16" />收起</button></div><button v-if="studioOverflowing && !studioExpanded" class="studio-toggle" type="button" aria-controls="studio-list" :aria-expanded="studioExpanded" @click="studioExpanded = true"><ArrowDown :size="16" />更多</button></div>
+          <section class="catalog-heading"><div><span>{{ catalogTotal }} 部作品</span><div class="studio-title-row"><h1>{{ sectionTitle }}</h1><button v-if="activeView === 'home' && !search.trim()" class="studio-picker-trigger" type="button" aria-haspopup="dialog" :aria-expanded="studioPickerOpen" @click="openStudioPicker"><span>工作室</span><ChevronDown :size="17" /></button></div></div></section>
           <section v-if="loading" class="empty-state"><RefreshCw class="spin" :size="24" />正在整理放映单</section><section v-else-if="videos.length" class="video-grid"><VideoCard v-for="(video, index) in videos" :key="video.id" :video="video" :index="index" @open="openVideo" /></section><section v-else class="empty-state"><Film :size="30" /><strong>这里还没有作品</strong><span>媒体节点同步后会自动出现。</span></section>
           <nav v-if="catalogPageCount > 1" class="catalog-pagination" aria-label="视频分页"><button class="icon-button" type="button" :disabled="catalogPage === 1" aria-label="上一页" title="上一页" @click="goToCatalogPage(catalogPage - 1)"><ArrowLeft :size="17" /></button><span>第 {{ catalogPage }} / {{ catalogPageCount }} 页</span><button class="icon-button" type="button" :disabled="catalogPage === catalogPageCount" aria-label="下一页" title="下一页" @click="goToCatalogPage(catalogPage + 1)"><ArrowRight :size="17" /></button></nav>
         </template>
@@ -597,6 +580,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
 
       <nav class="mobile-nav" aria-label="移动端导航"><button :class="{ active: activeView === 'home' }" @click="openView('home')"><Home :size="20" /><span>首页</span></button><button :class="{ active: activeView === 'library' }" @click="openView('library')"><Library :size="20" /><span>已购</span></button><button :class="{ active: activeView === 'account' }" @click="openView('account')"><UserIcon :size="20" /><span>我的</span></button><button v-if="account?.is_admin" :class="{ active: activeView === 'admin' }" @click="openView('admin')"><Shield :size="20" /><span>管理</span></button></nav>
 
+      <AppModal v-if="studioPickerOpen" title="选择工作室" wide @close="studioPickerOpen = false"><div class="studio-picker-modal"><div class="studio-picker-intro"><span>共 {{ studios.length }} 个工作室</span><p>选择一个分类，片单会立即更新。</p></div><div ref="studioPickerTags" class="studio-picker-tags" aria-label="工作室列表"><div ref="studioPickerMeasure" class="studio-picker-measure" aria-hidden="true"><button v-for="studio in pickerStudios" :key="`measure-${studio.id}`" class="studio-picker-tag" :data-studio-id="studio.id" type="button"><span>{{ studio.name }}</span><small>{{ studio.video_count }}</small></button></div><div class="studio-picker-rows"><div v-for="row in studioPickerRows" :key="row.map(studio => studio.id).join('-')" class="studio-picker-row"><button v-for="studio in row" :key="studio.id" class="studio-picker-tag" :class="{ active: selectedStudio === studio.id }" :data-studio-id="studio.id" type="button" @click="chooseStudio(studio.id)"><span>{{ studio.name }}</span><small>{{ studio.video_count }}</small><CheckCircle2 v-if="selectedStudio === studio.id" :size="15" /></button></div></div></div></div></AppModal>
       <AppModal v-if="selectedVideo" :title="selectedVideo.title" wide @close="selectedVideo = null"><div class="video-dialog"><div class="player-frame"><img v-if="selectedVideo.poster_url" :src="selectedVideo.poster_url" :alt="selectedVideo.title" /><div v-else class="poster-fallback"><Film :size="42" /></div></div><div class="video-dialog-copy"><span>{{ selectedVideo.studio_name }}</span><h3>{{ selectedVideo.title }}</h3><p>{{ formatBytes(selectedVideo.size_bytes) }} · {{ selectedVideo.width }}×{{ selectedVideo.height }} · {{ selectedVideo.video_codec.toUpperCase() }}</p><div v-if="!selectedVideo.available" class="inline-alert"><AlertCircle :size="18" />媒体节点暂时不可用</div><div v-else-if="selectedVideo.can_play" class="unlock-actions"><button class="primary" :disabled="playerBusy" @click="startPlayback"><Play :size="19" />{{ playerBusy ? '正在准备' : '播放' }}</button><button v-if="!selectedVideo.unlocked" class="secondary" @click="unlockVideo"><Coins :size="19" />{{ commerce.video_price }} 鹿币永久解锁</button></div><div v-else class="unlock-actions"><button class="primary" @click="unlockVideo"><Coins :size="19" />{{ commerce.video_price }} 鹿币永久解锁</button></div></div></div></AppModal>
     </template>
 

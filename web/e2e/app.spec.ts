@@ -33,15 +33,6 @@ const manyStudios = [
     '春日来信', '夜航船', '石榴', '岛屿影像收藏室',
   ].map((name, index) => ({ id: index + 3, name, video_count: index + 1 })),
 ]
-const liveLikeStudios = [
-  { id: 93, name: '丝米', video_count: 13 },
-  { id: 90, name: '半岛2024', video_count: 148 },
-  { id: 323, name: '学姐学妹', video_count: 21 },
-  { id: 94, name: '师傅你是做什么工作的', video_count: 2 },
-  { id: 92, name: '悠米', video_count: 39 },
-  { id: 95, name: '闪闪工作室', video_count: 1 },
-]
-
 async function mockAPI(page: Page, admin = false, redeemCodeTotal = 2, studioRows = defaultStudios) {
   const videoRequests: string[] = []
   const redeemCodeRequests: string[] = []
@@ -125,9 +116,8 @@ test('desktop random catalog and vertical detail stay within the viewport', asyn
   await page.goto('/')
   await expect(page.locator('.video-card')).toHaveCount(8)
   await expect(page.locator('.video-card')).toHaveCount(8)
-  await expect(page.getByRole('button', { name: '工作室', exact: true })).toHaveCount(0)
-  await expect(page.locator('.studio-strip')).toBeVisible()
-  await expect(page.getByRole('button', { name: '更多' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '工作室', exact: true })).toBeVisible()
+  await expect(page.locator('.studio-strip')).toHaveCount(0)
   const firstSeed = new URL(mocked.videoRequests[0], 'http://localhost').searchParams.get('seed')
   await page.getByRole('button', { name: '首页', exact: true }).click()
   await expect.poll(() => mocked.videoRequests.length).toBeGreaterThan(1)
@@ -286,10 +276,12 @@ test('direct watch link restores playback after authentication state loads', asy
   await expect(page.getByRole('heading', { name: videos[0].title })).toBeVisible()
 })
 
-test('studio filter stays on home and keeps the original catalog order', async ({ page }) => {
+test('studio picker stays on home and keeps the original catalog order', async ({ page }) => {
   const mocked = await mockAPI(page)
   await page.goto('/')
-  await page.locator('.studio-strip button').filter({ hasText: '半岛2024' }).click()
+  await page.locator('.studio-picker-trigger').click()
+  await expect(page.getByRole('heading', { name: '选择工作室' })).toBeVisible()
+  await page.locator('.studio-picker-rows .studio-picker-tag').filter({ hasText: '半岛2024' }).click()
   await expect(page.getByRole('heading', { name: '半岛2024' })).toBeVisible()
   await expect(page.locator('.video-card')).toHaveCount(4)
   const latestRequest = new URL(mocked.videoRequests.at(-1)!, 'http://localhost')
@@ -297,75 +289,47 @@ test('studio filter stays on home and keeps the original catalog order', async (
   expect(latestRequest.searchParams.has('seed')).toBe(false)
 })
 
-test('studio filter packs into two rows and stays expanded while selecting a studio', async ({ page }) => {
+test('studio picker globally packs rows and closes after selecting a studio', async ({ page }) => {
   const mocked = await mockAPI(page, false, 2, manyStudios)
   await page.setViewportSize({ width: 1024, height: 900 })
   await page.goto('/')
 
-  const strip = page.locator('.studio-strip')
-  const toggle = page.getByRole('button', { name: '更多' })
-  await expect(toggle).toBeVisible()
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  await expect(strip.locator('button').first()).toContainText('推荐')
-  const collapsed = await strip.boundingBox()
-  const firstButton = await strip.locator('button').first().boundingBox()
-  expect(collapsed).not.toBeNull()
-  expect(firstButton).not.toBeNull()
-  expect(collapsed!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
-
-  await toggle.click()
-  await expect(page.getByRole('button', { name: '收起' })).toHaveAttribute('aria-expanded', 'true')
-  const expandedRows = await strip.locator('button').evaluateAll(buttons => new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size)
-  expect(expandedRows).toBeGreaterThan(2)
+  await page.locator('.studio-picker-trigger').click()
+  await expect(page.getByRole('heading', { name: '选择工作室' })).toBeVisible()
+  const rows = page.locator('.studio-picker-row')
+  const rowCount = await rows.count()
+  expect(rowCount).toBeGreaterThan(1)
+  await expect(rows.first().locator('.studio-picker-tag').first()).toContainText('推荐')
 
   const target = manyStudios.at(-1)!
-  await strip.locator(`[data-studio-id="${target.id}"]`).click()
+  await rows.locator(`[data-studio-id="${target.id}"]`).click()
   await expect(page.getByRole('heading', { name: target.name })).toBeVisible()
-  await expect(page.getByRole('button', { name: '收起' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '选择工作室' })).toHaveCount(0)
   const latestRequest = new URL(mocked.videoRequests.at(-1)!, 'http://localhost')
   expect(latestRequest.searchParams.get('studio_id')).toBe(String(target.id))
-
-  await page.getByRole('button', { name: '收起' }).click()
-  await expect(page.getByRole('button', { name: '更多' })).toHaveAttribute('aria-expanded', 'false')
-  const collapsedAgain = await strip.boundingBox()
-  expect(collapsedAgain!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
-  await page.screenshot({ path: 'test-results/studio-filter-desktop.png', fullPage: true })
-})
-
-test('studio filter reveals overflow after a compact live-sized studio response settles', async ({ page }) => {
-  await mockAPI(page, false, 2, liveLikeStudios)
-  await page.setViewportSize({ width: 320, height: 844 })
-  await page.goto('/')
-  await expect(page.getByRole('button', { name: '更多' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: 'test-results/studio-picker-desktop.png', fullPage: true })
 })
 
 for (const width of [320, 390, 430]) {
-  test(`studio filter adapts without overflow at ${width}px`, async ({ page }) => {
+  test(`studio picker adapts without overflow at ${width}px`, async ({ page }) => {
     await mockAPI(page, false, 2, manyStudios)
     await page.setViewportSize({ width, height: 844 })
     await page.goto('/')
 
-    const strip = page.locator('.studio-strip')
-    const toggle = page.getByRole('button', { name: '更多' })
-    await expect(toggle).toBeVisible()
-    const toggleBounds = await toggle.boundingBox()
-    const stripBounds = await strip.boundingBox()
-    const firstButton = await strip.locator('button').first().boundingBox()
-    expect(toggleBounds).not.toBeNull()
-    expect(stripBounds).not.toBeNull()
-    expect(firstButton).not.toBeNull()
-    expect(toggleBounds!.height).toBe(firstButton!.height)
-    expect(toggleBounds!.width).toBeLessThan(stripBounds!.width)
-    expect(stripBounds!.height).toBeLessThanOrEqual(firstButton!.height * 2 + 9)
-
-    await toggle.click()
-    const longStudio = strip.locator(`[data-studio-id="${manyStudios[8].id}"]`)
+    await page.locator('.studio-picker-trigger').click()
+    await expect(page.getByRole('heading', { name: '选择工作室' })).toBeVisible()
+    const rows = page.locator('.studio-picker-row')
+    await expect(rows.first()).toBeVisible()
+    const longStudio = page.locator('.studio-picker-rows').locator(`[data-studio-id="${manyStudios[8].id}"]`)
     await expect(longStudio).toBeVisible()
     const longBounds = await longStudio.boundingBox()
-    const expandedStripBounds = await strip.boundingBox()
-    expect(longBounds!.width).toBeLessThanOrEqual(expandedStripBounds!.width + 1)
+    const tagsBounds = await page.locator('.studio-picker-tags').boundingBox()
+    expect(longBounds).not.toBeNull()
+    expect(tagsBounds).not.toBeNull()
+    expect(longBounds!.width).toBeLessThanOrEqual(tagsBounds!.width + 1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.screenshot({ path: `test-results/studio-filter-mobile-${width}.png`, fullPage: true })
+    await page.screenshot({ path: `test-results/studio-picker-mobile-${width}.png`, fullPage: true })
   })
 }
 

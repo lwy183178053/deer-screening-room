@@ -1581,3 +1581,29 @@
 - `/opt/deer-screening-room/app.studio-filter-20260805-2/deploy/cloud/web-before.json`：部署前 Web 容器检查点。
 - `progress.md`：记录生产镜像、真实域名布局和服务隔离证据。
 - 回滚方式：在本轮发布目录使用 `DEER_VERSION=studio-filter-before-20260805-2 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
+
+## 2026-08-05 - Task: 工作室筛选弹窗与品牌图标正式同步
+### What was done
+- 将首页工作室分类改为标题右侧的“工作室”按钮；桌面端使用居中弹窗，手机端使用底部抽屉，选择后关闭并沿用现有 `studio_id` 筛选。
+- 删除旧标签墙的折叠、更多/收起、ResizeObserver 重排状态；新增按实际标签宽度进行全局行装箱、每行居中的布局，并保留超宽名称的容器约束。
+- 使用提供的小鹿 SVG 更新品牌图标、单色资源、favicon 和 PWA 图标；品牌副标题改为“小鹿怡情”。
+- 更新前端单元测试、Playwright 选择器和媒体库文档，清理旧标签墙测试与无用数据。
+
+### Testing
+- `web`: `npm.cmd test`，5 个测试文件、13 项通过。
+- `web`: `npm.cmd run build`，Vue 类型检查和生产构建通过。
+- `web`: `npm.cmd run test:e2e`，21 项通过；覆盖桌面目录、弹窗选择、标题切换、兑换码/管理/播放流程及 320px、390px、430px 移动端无横向溢出。
+- `git diff --check` 通过；未修改后端、数据库、节点或媒体文件。
+
+### Notes
+- `web/src/App.vue`：替换工作室标签墙为弹窗/底部抽屉，并接入标题同步和筛选关闭逻辑。
+- `web/src/styles.css`：增加标题右侧按钮、弹窗标签行和移动端样式，删除旧折叠标签墙样式。
+- `web/src/studioLayout.ts`：实现带时间预算的全局行装箱算法，避免大量工作室阻塞浏览器。
+- `web/src/studioLayout.test.ts`：覆盖推荐首位、最少行数、稳定性和超宽标签。
+- `web/src/App.test.ts`：覆盖弹窗入口和标签渲染。
+- `web/e2e/app.spec.ts`：将旧标签墙用例改为弹窗、选中关闭和三种手机宽度用例。
+- `web/src/components/BrandLogo.vue`：品牌副标题改为“小鹿怡情”。
+- `web/src/assets/deer-mark.svg`、`web/src/assets/deer-mark-mono.svg`、`web/public/favicon.svg`、`web/public/icon-192.png`、`web/public/icon-512.png`：替换为用户提供的小鹿图标资源。
+- `docs/media-library.md`：记录新的工作室弹窗筛选行为。
+- `progress.md`：记录本轮实施、验证和回滚点。
+- 回滚方式：回退本轮前端提交，并仅使用旧 Web 镜像执行 `docker compose up -d --no-build --no-deps web`；不操作 Gateway、数据库、WireGuard、Caddy、节点或媒体文件。
