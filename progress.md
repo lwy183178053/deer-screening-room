@@ -1607,3 +1607,23 @@
 - `docs/media-library.md`：记录新的工作室弹窗筛选行为。
 - `progress.md`：记录本轮实施、验证和回滚点。
 - 回滚方式：回退本轮前端提交，并仅使用旧 Web 镜像执行 `docker compose up -d --no-build --no-deps web`；不操作 Gateway、数据库、WireGuard、Caddy、节点或媒体文件。
+
+## 2026-08-05 - Task: 部署工作室筛选弹窗与品牌图标
+### What was done
+- 将提交 `e4de6a4` 归档上传到 104，并在独立目录 `/opt/deer-screening-room/app.studio-picker-20260805-1` 复用现有运行配置。
+- 只执行 Web 镜像构建和 `up -d --no-deps web`；Gateway、PostgreSQL、WireGuard、provisioner、宿主 Caddy、媒体节点和其他业务未重启或修改。
+- 生产 Web 切换到 `deerroom-web:studio-picker-20260805-1`，上线工作室弹窗、标题跟随筛选、全局居中标签和新品牌图标。
+
+### Testing
+- 远端 Web 镜像构建成功，镜像摘要为 `sha256:cb5ccce99077ab41b5ced534fab9cfdb0d92fdcafea0dfa45ebcfd9bc3fa1aee`。
+- `http://127.0.0.1:28200/`、`http://127.0.0.1:28200/api/v1/health`、`https://xiaolu.lwylink.xyz/` 和公网 `/api/v1/health` 均返回成功。
+- 公网 `favicon.svg` 返回本轮提供的小鹿 SVG；Caddyfile.internal SHA-256 与部署前相同：`f4638f556e0db587f2dbd060a2929c7ab9408349ea0ca5eb18e1bb8660ba351c`。
+- Web 容器重启次数为 0；Gateway、PostgreSQL、WireGuard 和 provisioner 的启动时间、镜像与重启次数和部署前一致。
+- 部署后本地最终生产构建和 `git diff --check` 通过；前端 Playwright 全部 21 项通过。
+
+### Notes
+- `/opt/deer-screening-room/app.studio-picker-20260805-1`：本轮 104 Web 发布目录。
+- `/opt/deer-screening-room/app.studio-picker-20260805-1/deploy/cloud/deploy-backup/web-before.json`：部署前 Web 容器检查点。
+- `/opt/deer-screening-room/app.studio-picker-20260805-1/deploy/cloud/deploy-backup/containers-before.txt`、`containers-after.txt`：部署前后容器状态对比。
+- `progress.md`：追加生产部署、镜像摘要、健康检查和隔离证据。
+- 回滚方式：进入本轮发布目录，使用旧镜像执行 `DEER_VERSION=studio-filter-20260805-2 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web`；不使用 `-v`，不操作其他服务。
