@@ -1644,3 +1644,21 @@
 - `web/e2e/app.spec.ts`：增加推荐标签无数字断言。
 - `progress.md`：记录本轮修复和验证。
 - 回滚方式：回退本轮提交并仅恢复旧 Web 镜像；不操作 Gateway、数据库、WireGuard、Caddy、节点或媒体文件。
+
+## 2026-08-05 - Task: 部署隐藏推荐工作室数量
+### What was done
+- 将提交 `d3b054b` 上传到 104 独立发布目录 `/opt/deer-screening-room/app.studio-picker-20260805-2`。
+- 只构建并重建 Web 服务，生产镜像切换为 `deerroom-web:studio-picker-20260805-2`；其他业务容器保持原状态。
+- 推荐标签隐藏数量，其他工作室数量展示保持不变。
+
+### Testing
+- 新 Web 镜像构建成功，摘要为 `sha256:e36b3094566a10ee75a90f2a8dfa9944493e5f614b5ca2854be8fe07be3b6c04`。
+- 回环和公网 `/api/v1/health` 均返回 `{"service":"小鹿放映室","status":"ok"}`。
+- 真实域名 390px 浏览器验收：标题为“推荐”、入口仅显示“工作室”、推荐标签文本为“推荐”，其他标签继续显示数量，页面无横向溢出。
+- Gateway、PostgreSQL、WireGuard 和 provisioner 的启动时间、镜像和重启次数未变化。
+
+### Notes
+- `/opt/deer-screening-room/app.studio-picker-20260805-2`：本轮 Web 发布目录。
+- `/opt/deer-screening-room/app.studio-picker-20260805-2/deploy/cloud/deploy-backup/web-before.json`：部署前 Web 检查点。
+- `progress.md`：追加本轮线上部署证据。
+- 回滚方式：使用 `DEER_VERSION=studio-picker-20260805-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web` 恢复 Web；不操作其他服务。
