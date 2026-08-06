@@ -1662,3 +1662,37 @@
 - `/opt/deer-screening-room/app.studio-picker-20260805-2/deploy/cloud/deploy-backup/web-before.json`：部署前 Web 检查点。
 - `progress.md`：追加本轮线上部署证据。
 - 回滚方式：使用 `DEER_VERSION=studio-picker-20260805-1 docker compose --env-file .env -f compose.yaml -f compose.host-caddy.yaml up -d --no-build --no-deps web` 恢复 Web；不操作其他服务。
+
+## 2026-08-05 - Task: 允许低复杂度 AAC 音频通过转码校验
+### What was done
+- AV1 转码继续固定使用 AAC 双声道、48 kHz、标称 128 kbps，但取消对实测平均音频码率的最低值限制。
+- 保留 AAC 编码格式、声道数、采样率和最高实测码率校验，避免静音或低复杂度音频被误判为转码失败。
+- “师傅你是做什么工作的”目录已从失败位置续跑，已完成的 AV1 文件由增量模式自动跳过。
+
+### Testing
+- 新增静音 AAC 回归样本；修改前稳定复现“实测低于 80 kbps 被拒绝”，修改后完成 AV1 720p 转码并通过 AAC 双声道、48 kHz 校验。
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\transcode-av1-720p.tests.ps1` 通过。
+- 真实媒体续跑启动后进入剩余 `27` 个文件队列，错误日志为空；整批媒体结果仍以后台任务完成后的最终检查为准。
+
+### Notes
+- `scripts/transcode-av1-720p.ps1`：移除 AAC 实测平均码率的最低限制。
+- `scripts/transcode-av1-720p.tests.ps1`：新增低复杂度音频转码回归测试。
+- `docs/local-archive-extraction.md`：同步说明标称 128 kbps 与低复杂度音频实测平均值的关系。
+- `progress.md`：记录误判原因、验证结果和媒体续跑状态。
+- 回滚方式：恢复本轮前的 `scripts/transcode-av1-720p.ps1`、测试与文档版本；媒体文件按单文件原子替换，已完成文件保留，未完成文件继续保留原片。
+
+## 2026-08-05 - Task: 完成师傅你是做什么工作的媒体批次
+### What was done
+- 完成该目录 `41` 个压缩包的完整性校验、解压和成功后删除。
+- 完成 `41` 个视频的 AV1 720p 转码与元数据处理；保留原工作室目录和文件内容路径。
+- 清理本轮产生的过程日志和临时转码文件，媒体目录仅保留正式 MP4 文件。
+
+### Testing
+- 媒体目录最终统计：`41` 个 MP4、`0` 个压缩包、`0` 个转码临时文件、`0` 个过程日志。
+- `ffprobe` 全量抽检：`41 / 41` 为 AV1 视频，音频均为 AAC 双声道 48 kHz，`41 / 41` 含合法 `deer_media_key`。
+- 转码进程已退出，错误日志为空；低复杂度音频回归测试通过。
+
+### Notes
+- `E:\BaiduNetdiskDownload\师傅你是做什么工作的`：本轮媒体处理目录，不属于 Git 仓库文件。
+- `scripts/transcode-av1-720p.ps1`、`scripts/transcode-av1-720p.tests.ps1`、`docs/local-archive-extraction.md`、`progress.md`：记录并修复低码率 AAC 校验误判。
+- 回滚方式：使用外部媒体备份恢复单个 MP4；代码回滚本轮转码校验提交即可，其他业务服务无需回滚。
