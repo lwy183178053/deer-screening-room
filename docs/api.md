@@ -6,7 +6,7 @@
 
 公开目录支持 `GET /api/v1/videos?seed=<positive-integer>&page=<page>`。相同 `seed` 在各页保持稳定随机顺序，不同种子产生新的随机顺序；非法种子返回 `422 invalid_seed`。首页仅在未搜索、未选择工作室时携带种子，搜索与工作室筛选保持原有更新时间排序。
 
-账户：注册、登录、当前账户和退出位于 `/api/v1/auth/*`。`GET /api/v1/auth/captcha?purpose=register|login` 返回一次性 PNG 图片挑战；注册始终提交 `captcha_id` 和 `captcha_answer`，登录首次失败后要求验证码。鹿币与永久视频权益包括 `/api/v1/wallet`、`/wallet/redeem` 和 `/videos/{id}/unlock`；每部视频统一 1 鹿币。`GET /api/v1/commerce` 返回单片价格和兑换说明。
+账户：注册、登录、当前账户和退出位于 `/api/v1/auth/*`。`GET /api/v1/auth/captcha?purpose=register|login` 返回一次性 PNG 图片挑战；注册始终提交 `captcha_id` 和 `captcha_answer`，登录首次失败后要求验证码。鹿币与永久视频权益包括 `/api/v1/wallet?page=<page>`、`/wallet/redeem` 和 `/videos/{id}/unlock`；钱包明细每页 20 条并返回 `page`、`page_size`、`total`，每部视频统一 1 鹿币。`GET /api/v1/commerce` 返回单片价格和兑换说明。
 
 播放：前端 `/watch/{videoId}` 使用自托管 Artplayer 独立播放页；`POST /api/v1/videos/{id}/playback` 创建单账号唯一会话，返回同源 `/api/v1/playback/{id}/stream`。流接口支持 GET、HEAD、Range 和缓存条件头，播放器不加载广告、第三方脚本或外部链接。
 

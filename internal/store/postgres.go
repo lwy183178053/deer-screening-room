@@ -250,20 +250,42 @@ func (s *Postgres) AccountByUserID(ctx context.Context, userID int64, now time.T
 }
 
 func (s *Postgres) ListWalletEntries(ctx context.Context, userID int64, limit int) ([]WalletEntry, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,delta,kind,reference_id,description,created_at FROM wallet_entries WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`, userID, limit)
+	pageSize := limit
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	page, err := s.ListWalletEntriesPage(ctx, userID, 1, pageSize)
+	return page.Entries, err
+}
+
+func (s *Postgres) ListWalletEntriesPage(ctx context.Context, userID int64, pageNumber, pageSize int) (WalletEntryPage, error) {
+	if pageNumber < 1 {
+		pageNumber = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	var total int64
+	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM wallet_entries WHERE user_id=$1`, userID).Scan(&total); err != nil {
+		return WalletEntryPage{}, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id,delta,kind,reference_id,description,created_at FROM wallet_entries WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`, userID, pageSize, (pageNumber-1)*pageSize)
 	if err != nil {
-		return nil, err
+		return WalletEntryPage{}, err
 	}
 	defer rows.Close()
 	entries := []WalletEntry{}
 	for rows.Next() {
 		var entry WalletEntry
 		if err := rows.Scan(&entry.ID, &entry.Delta, &entry.Kind, &entry.ReferenceID, &entry.Description, &entry.CreatedAt); err != nil {
-			return nil, err
+			return WalletEntryPage{}, err
 		}
 		entries = append(entries, entry)
 	}
-	return entries, rows.Err()
+	if err := rows.Err(); err != nil {
+		return WalletEntryPage{}, err
+	}
+	return WalletEntryPage{Entries: entries, Page: pageNumber, PageSize: pageSize, Total: total}, nil
 }
 
 func (s *Postgres) AddAudit(ctx context.Context, actor int64, action, targetType, targetID string, detail any) error {

@@ -22,12 +22,12 @@ func (a *API) wallet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	entries, err := a.store.ListWalletEntries(r.Context(), account.ID, 50)
+	page, err := a.store.ListWalletEntriesPage(r.Context(), account.ID, requestedPage(r), 20)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"balance": account.Balance, "entries": entries})
+	writeJSON(w, 200, map[string]any{"balance": account.Balance, "entries": page.Entries, "page": page.Page, "page_size": page.PageSize, "total": page.Total})
 }
 
 func (a *API) redeem(w http.ResponseWriter, r *http.Request) {

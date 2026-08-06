@@ -1696,3 +1696,24 @@
 - `E:\BaiduNetdiskDownload\师傅你是做什么工作的`：本轮媒体处理目录，不属于 Git 仓库文件。
 - `scripts/transcode-av1-720p.ps1`、`scripts/transcode-av1-720p.tests.ps1`、`docs/local-archive-extraction.md`、`progress.md`：记录并修复低码率 AAC 校验误判。
 - 回滚方式：使用外部媒体备份恢复单个 MP4；代码回滚本轮转码校验提交即可，其他业务服务无需回滚。
+
+## 2026-08-06 - Task: 用户鹿币明细分页
+### What was done
+- 用户账户页的鹿币明细改为后端分页，每页 20 条，并显示上一页、下一页和当前页数。
+- 切换页面时替换当前记录；兑换成功后刷新第 1 页和最新余额。
+- 钱包接口补充 `page` 查询参数以及 `page`、`page_size`、`total` 响应字段，不改变兑换、购买或余额计算规则。
+
+### Testing
+- 回归测试先复现账户页缺少分页控件，再验证两页记录切换、当前列表替换和第 2 页请求参数。
+- `go test ./...`、`go test -race ./...`、`go vet ./...` 通过。
+- 前端 Vitest 5 个测试文件、14 项通过；生产构建通过；Playwright 21 项通过。
+- 三套 Compose 配置检查和 `git diff --check` 通过。
+
+### Notes
+- `internal/httpapi/commerce.go`：钱包接口读取页码并返回分页元数据。
+- `internal/store/postgres.go`、`internal/store/types.go`：增加钱包明细总数与 LIMIT/OFFSET 分页查询。
+- `web/src/App.vue`、`web/src/types.ts`、`web/src/styles.css`：增加账户页钱包分页状态、控件和样式。
+- `web/src/App.test.ts`：覆盖钱包两页切换和当前页替换。
+- `docs/api.md`：记录钱包分页接口和每页数量。
+- `progress.md`：记录本轮实现、验证与回滚点。
+- 回滚方式：回退本轮提交并仅恢复旧 Gateway/Web 镜像；数据库结构、钱包流水和媒体数据无需回滚。

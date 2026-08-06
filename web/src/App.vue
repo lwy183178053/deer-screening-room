@@ -5,7 +5,7 @@ import { api, APIError, csrf, setCSRF } from './api'
 import { formatBytes, formatDate } from './format'
 import { splitRedeemNoticeLinks } from './redeemNotice'
 import { packStudioRows } from './studioLayout'
-import type { Account, Commerce, NodeInfo, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry } from './types'
+import type { Account, Commerce, NodeInfo, RedeemCode, RedeemCodeCounts, RedeemCodePage, Studio, UserPage, Video, VideoPage, WalletEntry, WalletPage } from './types'
 import AppModal from './components/AppModal.vue'
 import BrandLogo from './components/BrandLogo.vue'
 import VideoCard from './components/VideoCard.vue'
@@ -58,6 +58,8 @@ const captchaImage = ref('')
 const captchaAnswer = ref('')
 
 const walletEntries = ref<WalletEntry[]>([])
+const walletPage = ref(1)
+const walletTotal = ref(0)
 const redeemCode = ref('')
 
 const adminTab = ref<AdminTab>('users')
@@ -113,6 +115,7 @@ const creditDelta = computed(() => creditDirection.value * (Number(creditAmount.
 const creditBalanceAfter = computed(() => (creditTarget.value?.balance ?? 0) + creditDelta.value)
 const recommendationMode = computed(() => activeView.value === 'home' && !selectedStudio.value && !search.value.trim())
 const catalogPageCount = computed(() => recommendationMode.value ? 1 : Math.max(1, Math.ceil(catalogTotal.value / 20)))
+const walletPageCount = computed(() => Math.max(1, Math.ceil(walletTotal.value / 20)))
 
 watch([message, error], () => {
   if (noticeTimer !== undefined) window.clearTimeout(noticeTimer)
@@ -346,8 +349,9 @@ function backFromWatch() {
   stopWatch()
 }
 
-async function loadWallet() { const body = await api<{ entries: WalletEntry[] }>('/api/v1/wallet'); walletEntries.value = body.entries ?? []; await loadMe() }
+async function loadWallet(pageNumber = 1) { const params = pageNumber > 1 ? `?page=${pageNumber}` : ''; const body = await api<WalletPage>(`/api/v1/wallet${params}`); walletEntries.value = body.entries ?? []; walletPage.value = body.page || pageNumber; walletTotal.value = body.total ?? walletEntries.value.length; await loadMe() }
 async function redeem() { try { await api('/api/v1/wallet/redeem', { method: 'POST', body: JSON.stringify({ code: redeemCode.value }) }); redeemCode.value = ''; await loadWallet(); message.value = '兑换成功，鹿币已到账。' } catch (caught) { error.value = errorMessage(caught) } }
+async function goToWalletPage(page: number) { if (page < 1 || page > walletPageCount.value || page === walletPage.value) return; await loadWallet(page); window.scrollTo({ top: 0, behavior: 'smooth' }) }
 
 async function openAdmin(tab: AdminTab) {
   adminTab.value = tab
@@ -565,7 +569,7 @@ function scanStatus(node: NodeInfo) { if (node.scan_status === 'scanning') retur
           <header class="page-heading"><div><span>我的账户</span><h1 class="account-email">{{ account?.email }}</h1></div><button class="icon-text" type="button" @click="logout"><LogOut :size="17" />退出</button></header>
           <div class="account-summary"><div><span>鹿币余额</span><strong>{{ account?.balance ?? 0 }}</strong></div></div>
           <div class="account-columns"><section class="plain-section redeem-section"><header><div><span>兑换码</span><h2>充值鹿币</h2></div></header><p v-if="commerce.redeem_notice" class="redeem-notice"><template v-for="(part, index) in redeemNoticeParts" :key="`${index}-${part.text}`"><a v-if="part.href" :href="part.href" target="_blank" rel="noopener noreferrer">{{ part.text }}</a><span v-else>{{ part.text }}</span></template></p><form class="redeem-form" @submit.prevent="redeem"><input v-model="redeemCode" required placeholder="DEER-XXXX-XXXX-XXXX-XXXX" /><button class="primary" type="submit"><Ticket :size="18" />兑换</button></form></section></div>
-          <section class="ledger-section"><header><span>最近记录</span><h2>鹿币明细</h2></header><div class="data-list"><div v-for="entry in walletEntries" :key="entry.id"><span>{{ entry.description }}<small>{{ formatDate(entry.created_at) }}</small></span><strong :class="entry.delta > 0 ? 'positive' : ''">{{ entry.delta > 0 ? '+' : '' }}{{ entry.delta }}</strong></div><p v-if="!walletEntries.length">暂无鹿币记录</p></div></section>
+          <section class="ledger-section"><header><span>兑换记录</span><h2>鹿币明细</h2></header><div class="data-list"><div v-for="entry in walletEntries" :key="entry.id"><span>{{ entry.description }}<small>{{ formatDate(entry.created_at) }}</small></span><strong :class="entry.delta > 0 ? 'positive' : ''">{{ entry.delta > 0 ? '+' : '' }}{{ entry.delta }}</strong></div><p v-if="!walletEntries.length">暂无鹿币记录</p></div><nav v-if="walletPageCount > 1" class="wallet-pagination" aria-label="鹿币明细分页"><button class="icon-button" type="button" :disabled="walletPage === 1" aria-label="上一页" title="上一页" @click="goToWalletPage(walletPage - 1)"><ArrowLeft :size="17" /></button><span>第 {{ walletPage }} / {{ walletPageCount }} 页</span><button class="icon-button" type="button" :disabled="walletPage === walletPageCount" aria-label="下一页" title="下一页" @click="goToWalletPage(walletPage + 1)"><ArrowRight :size="17" /></button></nav></section>
         </section>
 
         <section v-else class="admin-view">
