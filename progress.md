@@ -1717,3 +1717,22 @@
 - `docs/api.md`：记录钱包分页接口和每页数量。
 - `progress.md`：记录本轮实现、验证与回滚点。
 - 回滚方式：回退本轮提交并仅恢复旧 Gateway/Web 镜像；数据库结构、钱包流水和媒体数据无需回滚。
+
+## 2026-08-06 - Task: 部署用户鹿币明细分页
+### What was done
+- 将提交 `a04a449` 归档到 104 独立发布目录 `/opt/deer-screening-room/app.wallet-pagination-20260806-1`。
+- 构建并切换小鹿 Gateway 与 Web 到 `wallet-pagination-20260806-1`；未执行数据库迁移，未操作 PostgreSQL、WireGuard、provisioner、宿主机 Caddy 或其他业务。
+- 保留部署前 Gateway/Web 检查点及原发布目录，供独立回滚。
+
+### Testing
+- 新 Gateway/Web 镜像构建成功，镜像摘要分别为 `sha256:f9eec018d1306873a249f8a4f1130263d5ee9f34db3f7005c49ed034076bfaf4` 和 `sha256:fcdc0d3f61a30e9000be42d369bbca7fdbf91fdb0c77cfaf7a207c15774dad64`。
+- 真实生产账户钱包接口验证：共 `39` 条记录，第 1 页返回 `20` 条，第 2 页返回 `19` 条，`page`、`page_size`、`total` 正确。
+- 回环与公网 `/api/v1/health` 正常，公网首页返回 HTTP 200；新 Gateway/Web 重启次数均为 0。
+- PostgreSQL、WireGuard、provisioner 的创建时间和重启次数未变化；ModelRoute、Sub2API 及其数据库/Redis 容器未重建或重启。
+
+### Notes
+- `/opt/deer-screening-room/app.wallet-pagination-20260806-1`：本轮生产发布目录。
+- `/opt/deer-screening-room/app.wallet-pagination-20260806-1/deploy/cloud/deploy-backup/gateway-web-before.json`：部署前 Gateway/Web 检查点。
+- `/opt/deer-screening-room/app.wallet-pagination-20260806-1/deploy/cloud/deploy-backup/containers-before.txt`、`containers-after.txt`：部署前后容器状态记录。
+- `progress.md`：追加本轮生产部署和隔离验证证据。
+- 回滚方式：Gateway 使用 `deerroom-app:v0.1.4`、Web 使用 `deerroom-web:studio-picker-20260805-2`，分别执行 `docker compose up -d --no-build --no-deps gateway` 和 `docker compose up -d --no-build --no-deps web`；不使用 `-v`，不操作数据库、WireGuard、Caddy、节点或其他业务。
